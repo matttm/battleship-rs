@@ -1,0 +1,4 @@
+    # Workspace Cargo.toml (at the root of the repository)
+    [workspace]
+    members = [ "battleship-client", "crates/battleship-models"
+    ]
