@@ -2,19 +2,30 @@ use std::net::TcpListener;
 use std::thread::spawn;
 use tungstenite::accept;
 
-use crate::match_maker;
+use crate::match_maker::MatchMaker;
 
 pub struct GameServer {
-    match_maker: match_maker::MatchMaker,
+    url: String,
+    match_maker: MatchMaker,
 }
 
 impl GameServer {
     pub fn new() -> Self {
-        return Self {};
+        return Self {
+            url: "127.0.0.1:9001".to_string(),
+            match_maker: MatchMaker::new(),
+        };
+    }
+    pub fn start(&self) -> &String {
+        let x = self.url.to_string();
+        spawn(move || {
+            GameServer::_start(x);
+        });
+        &self.url
     }
     /// A WebSocket echo server
-    pub fn start(&self) {
-        let server = TcpListener::bind("127.0.0.1:9001").unwrap();
+    fn _start(url: String) {
+        let server = TcpListener::bind(url).unwrap();
         for stream in server.incoming() {
             spawn(move || {
                 let mut websocket = accept(stream.unwrap()).unwrap();
