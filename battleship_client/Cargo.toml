@@ -1,0 +1,8 @@
+[package]
+name = "battleship_client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+battleship_models = { path = "../crates/battleship_models" }
+tungstenite = "0.27.0"
