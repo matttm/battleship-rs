@@ -29,5 +29,6 @@ impl MatchMaker {
         } else {
             self.player_b = Some(Player::new(ws));
         }
+        ws.send(tungstenite::Message::binary()))
     }
 }

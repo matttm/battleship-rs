@@ -1,6 +1,6 @@
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
-use tungstenite::accept;
+use tungstenite::{WebSocket, accept};
 
 use crate::match_maker::{self, MatchMaker};
 
@@ -25,19 +25,18 @@ impl GameServer {
     fn _start(url: String) {
         let server = TcpListener::bind(url).unwrap();
         // NOTE: should i keep this maker stored in struct
-        let maker = match_maker::MatchMaker::new();
-        let mut waiting = 0u8;
-        for stream in server.incoming() {
-            spawn(move || {
-                let mut websocket = accept(stream.unwrap()).unwrap();
-                waiting += 1u8;
-                maker.join(websocket);
-                if waiting == 2u8 {
-                    maker = match_maker::MatchMaker::new();
-                    waiting = 0;
-                }
-            });
+        loop {
+            let mut maker = match_maker::MatchMaker::new();
+            let ws_a = GameServer::accept_ws(&server);
+            let ws_b = GameServer::accept_ws(&server);
+            maker.join(ws_a);
+            maker.join(ws_b);
         }
     }
     pub fn stop() {}
+    fn accept_ws(server: &TcpListener) -> WebSocket<TcpStream> {
+        let (stream, _) = server.accept().unwrap();
+        let ws = accept(stream).unwrap();
+        ws
+    }
 }

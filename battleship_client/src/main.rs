@@ -1,5 +1,6 @@
 use std::env;
 
+use log::info;
 use tungstenite::{Error, Message, Result, connect};
 
 use crate::server::GameServer;
@@ -14,12 +15,16 @@ fn main() {
     if args.len() <= 1 {
         // start server
         url = gs.start().to_string();
+        info!("Starting server");
     } else {
         url = args[1].to_string();
+        info!("Connecting to server");
     }
     let (mut socket, _) = connect(format!("ws://{url}")).expect("Cannot connect to game server");
     match socket.read() {
-        Ok(msg) => {}
+        Ok(msg) => {
+            info!("Received a message");
+        }
         Err(_) => {}
     }
     socket.close(None).expect("Error closing socket");
