@@ -1,3 +1,8 @@
+use std::net::TcpStream;
+
+use battleship_models;
+use serde::{Deserialize, Serialize};
+
 pub struct MatchMaker {
     settings: battleship_models::Settings,
     player_a: Option<Player>,
@@ -10,11 +15,10 @@ impl Player {
     pub fn new(ws: tungstenite::WebSocket<TcpStream>) -> Self {
         Self { socket: ws }
     }
+    pub fn get_ws_mut(&mut self) -> &mut tungstenite::WebSocket<TcpStream> {
+        &mut self.socket
+    }
 }
-use std::net::TcpStream;
-
-use battleship_models;
-
 impl MatchMaker {
     pub fn new() -> Self {
         MatchMaker {
@@ -23,12 +27,30 @@ impl MatchMaker {
             player_b: None,
         }
     }
-    pub fn join(&mut self, ws: tungstenite::WebSocket<TcpStream>) {
-        if let None = self.player_a {
-            self.player_a = Some(Player::new(ws));
+    pub fn join(
+        &mut self,
+        ws: tungstenite::WebSocket<TcpStream>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let player_slot = if self.player_a.is_none() {
+            &mut self.player_a
         } else {
-            self.player_b = Some(Player::new(ws));
-        }
-        ws.send(tungstenite::Message::binary()))
+            &mut self.player_b
+        };
+
+        *player_slot = Some(Player::new(ws));
+
+        // Get the mutable reference directly from the newly-assigned slot
+        let player_ws = player_slot.as_mut().unwrap().get_ws_mut();
+
+        Self::send_json(player_ws, &self.settings)?;
+        Ok(())
+    }
+    pub fn send_json(
+        ws: &mut tungstenite::WebSocket<TcpStream>,
+        payload: &impl Serialize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let msg = serde_json::to_string(payload)?;
+        ws.send(tungstenite::Message::text(msg))?;
+        Ok(())
     }
 }
