@@ -28,6 +28,7 @@ fn main() {
         info!("Connecting to server");
     }
     let (mut socket, _) = connect(format!("ws://{url}")).expect("Cannot connect to game server");
+    info!("Connection established");
     match socket.read() {
         Ok(msg) => {
             info!("Received a message");

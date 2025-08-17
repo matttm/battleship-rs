@@ -49,8 +49,8 @@ impl MatchMaker {
         ws: &mut tungstenite::WebSocket<TcpStream>,
         payload: &impl Serialize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let msg = serde_json::to_string(payload)?;
-        ws.send(tungstenite::Message::text(msg))?;
+        let msg = serde_json::to_string(payload).unwrap();
+        ws.send(tungstenite::Message::text(msg)).unwrap();
         Ok(())
     }
 }
