@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, trace};
 use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
 use tungstenite::{WebSocket, accept};
@@ -17,6 +17,7 @@ impl GameServer {
     }
     pub fn start(&self) -> &String {
         let x = self.url.to_string();
+        trace!("Spawning thread for server");
         spawn(move || {
             GameServer::_start(x);
         });
@@ -39,6 +40,7 @@ impl GameServer {
     fn accept_ws(server: &TcpListener) -> WebSocket<TcpStream> {
         let (stream, _) = server.accept().unwrap();
         let ws = accept(stream).unwrap();
+        trace!("Accepting websocket connection");
         ws
     }
 }

@@ -16,7 +16,7 @@ fn main() {
     // Initialize env_logger to output to stdout with info level
     let mut builder = Builder::from_default_env();
     builder.target(Target::Stdout); // Set the output target to stdout
-    builder.filter_level(log::LevelFilter::Info); // Set the minimum log level to info
+    builder.filter_level(log::LevelFilter::Trace); // Set the minimum log level to info
     builder.init();
     info!("Initializing BATTLESHIP");
     if args.len() <= 1 {
