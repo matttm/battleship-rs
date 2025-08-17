@@ -1,3 +1,4 @@
+use log::info;
 use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
 use tungstenite::{WebSocket, accept};
@@ -23,6 +24,7 @@ impl GameServer {
     }
     /// A WebSocket echo server
     fn _start(url: String) {
+        info!("Binding to {}", &url);
         let server = TcpListener::bind(url).unwrap();
         // NOTE: should i keep this maker stored in struct
         loop {
