@@ -27,17 +27,21 @@ impl GameServer {
     fn _start(url: String) {
         info!("Binding to {}", &url);
         let server = TcpListener::bind(url).unwrap();
-        // NOTE: should i keep this maker stored in struct
+        // NOTE: maybe remove this loop if only doing one lobby
         loop {
             let mut maker = match_maker::MatchMaker::new();
             let ws_a = GameServer::accept_ws(&server);
+            // join method sends settings
             if let Err(_) = maker.join(ws_a) {
                 error!("Local player cannot join server");
             }
+            info!("Waiting for second player");
             let ws_b = GameServer::accept_ws(&server);
             if let Err(_) = maker.join(ws_b) {
                 error!("Second player cannot join server");
             }
+            // TODO: if i dont remove loop and expect more lobbies, then put run on own thread
+            maker.run();
         }
     }
     pub fn stop() {}
