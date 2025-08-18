@@ -1,4 +1,4 @@
-use log::{error, info, trace};
+use log::{error, info};
 use std::net::{TcpListener, TcpStream};
 use std::thread::spawn;
 use tungstenite::{WebSocket, accept};
@@ -17,7 +17,7 @@ impl GameServer {
     }
     pub fn start(&self) -> &String {
         let x = self.url.to_string();
-        trace!("Spawning thread for server");
+        info!("Spawning thread for server");
         spawn(move || {
             GameServer::_start(x);
         });
@@ -32,17 +32,19 @@ impl GameServer {
             let mut maker = match_maker::MatchMaker::new();
             let ws_a = GameServer::accept_ws(&server);
             if let Err(_) = maker.join(ws_a) {
-                error!("Cannot join server");
+                error!("Local player cannot join server");
             }
             let ws_b = GameServer::accept_ws(&server);
-            if let Err(_) = maker.join(ws_b) {}
+            if let Err(_) = maker.join(ws_b) {
+                error!("Second player cannot join server");
+            }
         }
     }
     pub fn stop() {}
     fn accept_ws(server: &TcpListener) -> WebSocket<TcpStream> {
         let (stream, _) = server.accept().unwrap();
         let ws = accept(stream).unwrap();
-        trace!("Accepting websocket connection");
+        info!("Accepting websocket connection");
         ws
     }
 }
