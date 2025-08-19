@@ -2,6 +2,8 @@
 
 ## Description
 
+A two-player recreation of the classic board game written in Rust.
+
 ## Getting started
 
 ## Authors
