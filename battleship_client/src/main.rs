@@ -34,10 +34,6 @@ fn main() {
     match socket.read() {
         Ok(Message::Text(msg)) => {
             let json = msg.to_string();
-            if let Ok(settings) = serde_json::from_str::<Settings>(&json) {
-            } else if let Ok(settings) = serde_json::from_str::<Settings>(&json) {
-            } else {
-            }
         }
         Ok(_) => {}
         Err(_) => {}

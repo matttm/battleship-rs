@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone)]
+pub enum CellStates {
+    Empty,
+    Boat,
+    Miss,
+    Hit,
+}
 #[derive(Serialize, Deserialize)]
 pub struct Coordinates {
     pub x: u32,
@@ -8,14 +15,25 @@ pub struct Coordinates {
 
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
-    pub rows: u32,
-    pub cols: u32,
+    pub rows: usize,
+    pub cols: usize,
+}
+#[derive(Serialize, Deserialize)]
+pub struct SelectionCriteria {
+    pub count: usize,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum GameStates {
-    JoinGame,
     InitializeGame(Settings),
+    SelectionMode(SelectionCriteria),
     PlaceShip(Coordinates),
     LaunchMissle(Coordinates),
+    GameOver,
+}
+#[derive(Serialize, Deserialize)]
+pub struct Message {
+    pub id: u32,
+    pub sender: String,
+    pub payload: GameStates,
 }

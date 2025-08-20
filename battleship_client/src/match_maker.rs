@@ -1,6 +1,7 @@
 use std::{
     net::TcpStream,
     sync::{Arc, Mutex},
+    thread,
 };
 
 use crate::player::Player;
@@ -51,15 +52,22 @@ impl MatchMaker {
         self.receive_selections()?;
         Ok(())
     }
-    pub fn receive_selections(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn receive_selections(&mut self, count: usize) -> Result<(), Box<dyn std::error::Error>> {
         let mut recipients = [&mut self.shared_player_a, &mut self.shared_player_b];
         for opt in recipients.iter_mut() {
             // Now, `shared_player_option` is `&mut &mut Option<Player>`.
             // The `if let` statement correctly and safely extracts the mutable reference.
             if let Some(shared_player) = opt {
                 // `player` is now a `&mut Player`.
-                let mut player = shared_player.lock().unwrap();
-                let selection: GameStates = Self::receive_json(player.get_ws_mut())?;
+                let handle_a = thread::spawn({
+                    let player_clone = Arc::clone(shared_player);
+                    let count_clone = count;
+                    move || {
+                        let mut player = player_clone.lock().unwrap();
+                        let selection: GameStates =
+                            Self::receive_json(player.get_ws_mut()).unwrap();
+                    }
+                });
             }
         }
         Ok(())
