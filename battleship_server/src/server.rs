@@ -18,11 +18,12 @@ impl GameServer {
             lobbies: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    pub fn start(&self) -> &String {
-        let x = self.url.to_string();
+    pub fn start() {
         info!("Spawning thread for server");
-        tokio::spawn(GameServer::_start(x, self.lobbies.clone()));
-        &self.url
+        tokio::spawn(async move {
+            let server = Self::new();
+            GameServer::_start(server.url, server.lobbies).await;
+        });
     }
     /// A WebSocket echo server
     async fn _start(url: String, lobbies: Arc<Mutex<HashMap<String, Arc<Mutex<MatchMaker>>>>>) {
