@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 
-pub struct MatchMaker {
+pub struct Lobby {
     id: String,
     settings: battleship_models::Settings,
     shared_player_a: Option<Arc<Mutex<Player>>>,
     shared_player_b: Option<Arc<Mutex<Player>>>,
 }
-impl MatchMaker {
+impl Lobby {
     pub fn new(id: String) -> Self {
         Self {
             id,
