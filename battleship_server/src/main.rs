@@ -1,11 +1,10 @@
-pub mod lobby_manager;
 pub mod lobby;
+pub mod lobby_manager;
 pub mod player;
 
-use crate::{lobby_manager::LobbyManager};
+use crate::lobby_manager::LobbyManager;
 
 #[tokio::main]
 async fn main() {
-    let server = LobbyManager::new();
-    LobbyManager::start(server.url, server.lobbies).await;
+    LobbyManager::start().await;
 }

@@ -10,14 +10,14 @@ pub enum PlayerStatus {
 }
 pub struct Player {
     socket: WebSocketStream<TcpStream>,
-    status: PlayerStatus,
+    // status: PlayerStatus,
     board: Box<[Box<[CellStates]>]>,
 }
 impl Player {
     pub fn new(ws: WebSocketStream<TcpStream>, rows: usize, cols: usize) -> Self {
         Self {
             socket: ws,
-            status: PlayerStatus::Idle,
+            // status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
         }
     }
