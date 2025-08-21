@@ -1,54 +1,70 @@
+use futures_util::lock::Mutex;
 use log::{error, info};
-use std::net::{TcpListener, TcpStream};
-use std::thread::spawn;
-use tungstenite::{WebSocket, accept};
+use std::{collections::HashMap, sync::Arc, thread::spawn};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::WebSocketStream;
 
 use crate::match_maker::{self, MatchMaker};
 
 pub struct GameServer {
     url: String,
+    lobbies: Arc<Mutex<HashMap<String, Arc<Mutex<MatchMaker>>>>>,
 }
 
 impl GameServer {
     pub fn new() -> Self {
-        return Self {
+        Self {
             url: "127.0.0.1:9001".to_string(),
-        };
+            lobbies: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
     pub fn start(&self) -> &String {
         let x = self.url.to_string();
         info!("Spawning thread for server");
-        spawn(move || {
-            GameServer::_start(x);
-        });
+        tokio::spawn(GameServer::_start(x, self.lobbies.clone()));
         &self.url
     }
     /// A WebSocket echo server
-    fn _start(url: String) {
+    async fn _start(url: String, lobbies: Arc<Mutex<HashMap<String, Arc<Mutex<MatchMaker>>>>>) {
         info!("Binding to {}", &url);
-        let server = TcpListener::bind(url).unwrap();
-        // NOTE: maybe remove this loop if only doing one lobby
-        loop {
-            let mut maker = match_maker::MatchMaker::new();
-            let ws_a = GameServer::accept_ws(&server);
-            // join method sends settings
-            if let Err(_) = maker.join(ws_a) {
-                error!("Local player cannot join server");
+        let server = TcpListener::bind(url).await.unwrap();
+        let mut current_lobby: Option<Arc<Mutex<MatchMaker>>> = None;
+
+        while let Ok((raw_stream, _addr)) = server.accept().await {
+            let ws_stream = tokio_tungstenite::accept_async(raw_stream).await.unwrap();
+
+            let lobby_to_use = match current_lobby {
+                Some(ref lobby) => {
+                    let is_full = {
+                        let lobby_guard = lobby.lock().await;
+                        lobby_guard.is_lobby_full()
+                    };
+                    if is_full {
+                        let new_lobby = Arc::new(Mutex::new(MatchMaker::new(String::from(""))));
+                        current_lobby = Some(Arc::clone(&new_lobby));
+                        new_lobby
+                    } else {
+                        Arc::clone(lobby)
+                    }
+                }
+                None => {
+                    let new_lobby = Arc::new(Mutex::new(MatchMaker::new(String::from(""))));
+                    current_lobby = Some(Arc::clone(&new_lobby));
+                    new_lobby
+                }
+            };
+
+            // Lock the lobby_to_use to call the join method.
+            let mut lobby_guard = lobby_to_use.lock().await;
+            if let Err(e) = lobby_guard.join(ws_stream).await {
+                eprintln!("Error joining lobby: {:?}", e);
             }
-            info!("Waiting for second player");
-            let ws_b = GameServer::accept_ws(&server);
-            if let Err(_) = maker.join(ws_b) {
-                error!("Second player cannot join server");
-            }
-            // TODO: if i dont remove loop and expect more lobbies, then put run on own thread
-            maker.run();
+
+            // Lock the lobbies map and insert the lobby.
+            let mut map = lobbies.lock().await;
+            map.insert(lobby_guard.get_id().to_string(), Arc::clone(&lobby_to_use));
         }
     }
-    pub fn stop() {}
-    fn accept_ws(server: &TcpListener) -> WebSocket<TcpStream> {
-        let (stream, _) = server.accept().unwrap();
-        let ws = accept(stream).unwrap();
-        info!("Accepting websocket connection");
-        ws
-    }
+    // TODO: send an id through  channel to remove the lobby from mp of lobbies?
+    pub async fn stop() {}
 }

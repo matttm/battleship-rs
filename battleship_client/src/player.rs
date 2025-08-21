@@ -1,16 +1,23 @@
-use std::net::TcpStream;
+use tokio::net::TcpStream;
 
-use battleship_models::{self, CellStates, GameStates};
-use serde::{Deserialize, Serialize};
+use battleship_models::{self, CellStates};
+use tokio_tungstenite::WebSocketStream;
 
+pub enum PlayerStatus {
+    Selecting(u8), // u8 is count remaining to be chosen
+    Deciding,
+    Idle,
+}
 pub struct Player {
-    socket: tungstenite::WebSocket<TcpStream>,
+    socket: WebSocketStream<TcpStream>,
+    status: PlayerStatus,
     board: Box<[Box<[CellStates]>]>,
 }
 impl Player {
-    pub fn new(ws: tungstenite::WebSocket<TcpStream>, rows: usize, cols: usize) -> Self {
+    pub fn new(ws: WebSocketStream<TcpStream>, rows: usize, cols: usize) -> Self {
         Self {
             socket: ws,
+            status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
         }
     }
@@ -35,7 +42,7 @@ impl Player {
         self.board[row][col] = state.clone();
         Ok(state)
     }
-    pub fn get_ws_mut(&mut self) -> &mut tungstenite::WebSocket<TcpStream> {
+    pub fn get_ws_mut(&mut self) -> &mut WebSocketStream<TcpStream> {
         &mut self.socket
     }
     fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellStates]>]> {
