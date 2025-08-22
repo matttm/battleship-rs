@@ -8,6 +8,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::WebSocketStream;
 
 pub struct Lobby {
+    // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
     settings: battleship_models::Settings,
     shared_player_a: Option<Arc<Mutex<Player>>>,
@@ -33,6 +34,7 @@ impl Lobby {
         };
 
         *shared_player_slot = Some(Arc::new(Mutex::new(Player::new(
+            String::from(""),
             ws,
             self.settings.rows,
             self.settings.cols,

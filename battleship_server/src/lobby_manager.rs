@@ -37,6 +37,12 @@ impl LobbyManager {
                         lobby_guard.is_lobby_full()
                     };
                     if is_full {
+                        // start lobby
+                        let _lobby = Arc::clone(lobby);
+                        let _handler = tokio::spawn(async move {
+                            let mut lobby = _lobby.lock().await;
+                            if let Err(_) = lobby.run() {}
+                        });
                         let new_lobby = Arc::new(Mutex::new(Lobby::new(String::from(""))));
                         current_lobby = Some(Arc::clone(&new_lobby));
                         new_lobby

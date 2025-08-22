@@ -1,12 +1,9 @@
 use std::env;
 
-use battleship_models::Settings;
 use env_logger::{Builder, Target};
+use futures_util::{SinkExt, StreamExt};
 use log::info;
-
-pub mod match_maker;
-pub mod player;
-pub mod server;
+use tokio_tungstenite::tungstenite::Message;
 /// A WebSocket echo server
 #[tokio::main]
 async fn main() {
@@ -20,14 +17,8 @@ async fn main() {
     info!("Initializing BATTLESHIP");
     url = args[1].to_string();
     info!("Connecting to server");
-    let (mut socket, _) = connect(format!("ws://{url}")).expect("Cannot connect to game server");
+    let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{url}"))
+        .await
+        .expect("Cannot connect to game server");
     info!("Connection established");
-    match socket.read() {
-        Ok(Message::Text(msg)) => {
-            let json = msg.to_string();
-        }
-        Ok(_) => {}
-        Err(_) => {}
-    }
-    socket.close(None).expect("Error closing socket");
 }

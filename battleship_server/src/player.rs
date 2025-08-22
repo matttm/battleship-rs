@@ -9,13 +9,15 @@ pub enum PlayerStatus {
     Idle,
 }
 pub struct Player {
+    name: String,
     socket: WebSocketStream<TcpStream>,
     // status: PlayerStatus,
     board: Box<[Box<[CellStates]>]>,
 }
 impl Player {
-    pub fn new(ws: WebSocketStream<TcpStream>, rows: usize, cols: usize) -> Self {
+    pub fn new(name: String, ws: WebSocketStream<TcpStream>, rows: usize, cols: usize) -> Self {
         Self {
+            name,
             socket: ws,
             // status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
@@ -46,7 +48,7 @@ impl Player {
         &mut self.socket
     }
     fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellStates]>]> {
-        let mut vec_rows = vec![];
+        let mut vec_rows = Vec::with_capacity(rows);
         for _ in 0..rows {
             vec_rows.push(vec![CellStates::Empty; cols].into_boxed_slice());
         }
