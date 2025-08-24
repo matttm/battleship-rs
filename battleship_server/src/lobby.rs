@@ -1,54 +1,50 @@
-use std::sync::{Arc, Mutex};
-
-use crate::player::Player;
-use battleship_models::{self, SelectionCriteria};
+use crate::{internal, player::Player};
+use battleship_models::{self, Message, SelectionCriteria};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
-use tokio_tungstenite::WebSocketStream;
+use tokio::{net::TcpStream, sync::mpsc};
 
 pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
     settings: battleship_models::Settings,
-    shared_player_a: Option<Arc<Mutex<Player>>>,
-    shared_player_b: Option<Arc<Mutex<Player>>>,
+    rx_from_client: mpsc::Receiver<Message>,
+    tx_to_client: mpsc::Sender<Message>,
+    player_a: Option<Player>,
+    player_b: Option<Player>,
 }
 impl Lobby {
-    pub fn new(id: String) -> Self {
+    pub fn new(
+        id: String,
+        rx_from_client: mpsc::Receiver<Message>,
+        tx_to_client: mpsc::Sender<Message>,
+    ) -> Self {
         Self {
             id,
             settings: battleship_models::Settings { rows: 8, cols: 8 },
-            shared_player_a: None,
-            shared_player_b: None,
+            manager_rx,
+            lobby_rx,
+            player_a: None,
+            player_b: None,
         }
     }
-    pub async fn join(
-        &mut self,
-        ws: WebSocketStream<TcpStream>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let shared_player_slot = if self.shared_player_a.is_none() {
-            &mut self.shared_player_a
+    pub async fn join(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let player_slot = if self.player_a.is_none() {
+            &mut self.player_a
         } else {
-            &mut self.shared_player_b
+            &mut self.player_b
         };
 
-        *shared_player_slot = Some(Arc::new(Mutex::new(Player::new(
+        *player_slot = Some(Player::new(
             String::from(""),
-            ws,
             self.settings.rows,
             self.settings.cols,
-        ))));
+        ));
 
-        // Get the mutable reference directly from the newly-assigned slot
-        let mut player = shared_player_slot.as_mut().unwrap().lock().unwrap();
-        let shared_player_ws = player.get_ws_mut();
-
-        Self::send_json(shared_player_ws, &self.settings).await?;
         Ok(())
     }
     pub fn is_lobby_full(&self) -> bool {
-        self.shared_player_a.is_some() && self.shared_player_b.is_some()
+        self.player_a.is_some() && self.player_b.is_some()
     }
     pub fn get_id(&self) -> String {
         self.id.to_string()
@@ -61,14 +57,12 @@ impl Lobby {
         &mut self,
         payload: &impl Serialize,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut recipients = [&mut self.shared_player_a, &mut self.shared_player_b];
+        let mut recipients = [&mut self.player_a, &mut self.player_b];
         for opt in recipients.iter_mut() {
             // Now, `shared_player_option` is `&mut &mut Option<Player>`.
             // The `if let` statement correctly and safely extracts the mutable reference.
-            if let Some(shared_player) = opt {
+            if let Some(player) = opt {
                 // `player` is now a `&mut Player`.
-                let mut player = shared_player.lock().unwrap();
-                Self::send_json(player.get_ws_mut(), payload).await?;
             }
         }
         Ok(())

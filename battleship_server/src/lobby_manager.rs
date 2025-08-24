@@ -1,14 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
+use battleship_models::Message;
 use futures_util::lock::Mutex;
 use log::info;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::lobby::Lobby;
 
 pub struct LobbyManager {
     url: String,
-    lobbies: Arc<Mutex<HashMap<String, Arc<Mutex<Lobby>>>>>,
+    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<Message>>>>,
 }
 
 impl LobbyManager {
@@ -29,43 +30,16 @@ impl LobbyManager {
 
         while let Ok((raw_stream, _addr)) = server.accept().await {
             let ws_stream = tokio_tungstenite::accept_async(raw_stream).await.unwrap();
+            let (tx_to_lobby, rx_from_client) = mpsc::channel(100);
+            let (tx_to_client, rx_from_lobby) = mpsc::channel(100);
 
-            let lobby_to_use = match current_lobby {
-                Some(ref lobby) => {
-                    let is_full = {
-                        let lobby_guard = lobby.lock().await;
-                        lobby_guard.is_lobby_full()
-                    };
-                    if is_full {
-                        // start lobby
-                        let _lobby = Arc::clone(lobby);
-                        let _handler = tokio::spawn(async move {
-                            let mut lobby = _lobby.lock().await;
-                            if let Err(_) = lobby.run() {}
-                        });
-                        let new_lobby = Arc::new(Mutex::new(Lobby::new(String::from(""))));
-                        current_lobby = Some(Arc::clone(&new_lobby));
-                        new_lobby
-                    } else {
-                        Arc::clone(lobby)
-                    }
-                }
-                None => {
-                    let new_lobby = Arc::new(Mutex::new(Lobby::new(String::from(""))));
-                    current_lobby = Some(Arc::clone(&new_lobby));
-                    new_lobby
-                }
-            };
-
-            // Lock the lobby_to_use to call the join method.
-            let mut lobby_guard = lobby_to_use.lock().await;
-            if let Err(e) = lobby_guard.join(ws_stream).await {
-                eprintln!("Error joining lobby: {:?}", e);
-            }
-
-            // Lock the lobbies map and insert the lobby.
-            let mut map = lobbies.lock().await;
-            map.insert(lobby_guard.get_id().to_string(), Arc::clone(&lobby_to_use));
+            let id = String::from("id"); // TODO: get this thru a msg?
+            let mut lobbies_guard = lobbies.lock().await;
+            let tx_clone = tx_to_lobby.clone();
+            lobbies_guard.entry(id).or_insert_with(|| tx_clone);
+            tokio::spawn(async move || {
+                Lobby::new(id, rx_from_client, tx_to_client).run();
+            });
         }
     }
     // TODO: send an id through  channel to remove the lobby from mp of lobbies?
