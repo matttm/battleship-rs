@@ -48,12 +48,7 @@ impl LobbyManager {
                 let (mut tx, mut rx) = ws_stream.split();
                 loop {
                     tokio::select! {
-                        Some(tung_msg) = rx.next() => {
-                            if let Some(msg) = serde_json::from_str::<Message>(tung_msg.unwrap()) {
-                                tx_clone.send(msg);
-                            } else {}
-                        },
-                        Some(bs_msg) = rx_from_lobby.recv() => {},
+                        Some(msg) = rx.next() => [],
                         else => break
                     }
                 }

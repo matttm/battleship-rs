@@ -136,6 +136,15 @@ dependencies = [
 [[package]]
 name = "battleship_utilities"
 version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
 
 [[package]]
 name = "bitflags"
