@@ -1,4 +1,4 @@
-use crate::{internal, player::Player};
+use crate::{player::Player, server_messages::ServerMessage};
 use battleship_models::{self, Message, SelectionCriteria};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -8,22 +8,16 @@ pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
     settings: battleship_models::Settings,
-    rx_from_client: mpsc::Receiver<Message>,
-    tx_to_client: mpsc::Sender<Message>,
+    rx_from_manager: mpsc::Receiver<ServerMessage>,
     player_a: Option<Player>,
     player_b: Option<Player>,
 }
 impl Lobby {
-    pub fn new(
-        id: String,
-        rx_from_client: mpsc::Receiver<Message>,
-        tx_to_client: mpsc::Sender<Message>,
-    ) -> Self {
+    pub fn new(id: String, rx_from_manager: mpsc::Receiver<ServerMessage>) -> Self {
         Self {
             id,
             settings: battleship_models::Settings { rows: 8, cols: 8 },
-            rx_from_client,
-            tx_to_client,
+            rx_from_manager,
             player_a: None,
             player_b: None,
         }

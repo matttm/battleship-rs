@@ -3,14 +3,20 @@ use std::{collections::HashMap, sync::Arc};
 use battleship_models::Message;
 use futures_util::{SinkExt, StreamExt, lock::Mutex};
 use log::info;
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, oneshot},
+};
 use tokio_tungstenite::tungstenite;
 
-use crate::lobby::Lobby;
+use crate::{
+    lobby::Lobby,
+    server_messages::{ConnectionDetails, ServerMessage},
+};
 
 pub struct LobbyManager {
     url: String,
-    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<Message>>>>,
+    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<ServerMessage>>>>,
 }
 
 impl LobbyManager {
@@ -29,21 +35,28 @@ impl LobbyManager {
         let server = TcpListener::bind(url).await.unwrap();
 
         while let Ok((raw_stream, _addr)) = server.accept().await {
-            let (tx_to_client, mut rx_from_lobby) = mpsc::channel(100);
-
             let id = String::from("id"); // TODO: get this thru a msg?
             let id_clone = id.clone();
             let mut lobbies_guard = lobbies.lock().await;
-            let tx_to_lobby = lobbies_guard.entry(id).or_insert_with(|| {
-                let (tx_to_lobby, rx_from_client) = mpsc::channel(100);
+            let tx_to_lobby_from_manager = lobbies_guard.entry(id).or_insert_with(|| {
+                let (tx_to_lobby, rx_from_manager) = mpsc::channel(100);
                 // task for the lobby and game kgic
                 tokio::spawn(async move {
-                    Lobby::new(id_clone, rx_from_client, tx_to_client).run();
+                    Lobby::new(id_clone, rx_from_manager).run();
                 });
                 tx_to_lobby
             });
+            // TODO: join match, send it rx_from_task and tx_to_lobby
+            let (tx_to_lobby_from_task, rx_from_task) = mpsc::channel(100);
+            let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<Message>(100);
+            tx_to_lobby_from_manager
+                .send(ServerMessage::NewConnection(ConnectionDetails {
+                    player_id: String::from("1"),
+                    tx: tx_to_task,
+                    rx: rx_from_task,
+                }))
+                .await;
             // task for handkking the websocker
-            let tx_clone = tx_to_lobby.clone();
             tokio::spawn(async move {
                 let ws_stream = tokio_tungstenite::accept_async(raw_stream).await.unwrap();
                 let (mut tx, mut rx) = ws_stream.split();
@@ -52,10 +65,11 @@ impl LobbyManager {
                         Some(Ok(tungstenite::Message::Text(tung_msg))) = rx.next() => {
                             let s = tung_msg.to_string();
                             if let Ok(msg) = serde_json::from_str::<Message>(&s) {
-                                if let Err(_) = tx_clone.send(msg).await {}
+                                if
+                                let Err(_) = tx_to_lobby_from_task.send(msg).await {}
                             } else {}
                         },
-                        Some(bs_msg) = rx_from_lobby.recv() => {
+                            Some(bs_msg) = rx_from_lobby.recv() => {
                             if let Ok(json) = serde_json::to_string(&bs_msg) {
                                 let tung_msg = tungstenite::protocol::Message::text(json);
                                 if let Err(_) = tx.send(tung_msg).await {}
