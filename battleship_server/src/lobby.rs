@@ -56,13 +56,21 @@ impl Lobby {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
                         ServerMessage::NewConnection(details) => {
-                            self.join(details.player_id, details.tx, details.rx);
+                            if let Err(_) = self.join(details.player_id, details.tx, details.rx) {}
                         },
                     }
                 },
-                Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {},
+                Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
+                        Self::handle_player_message(msg).await;
+                },
+                Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
+                        Self::handle_player_message(msg).await;
+                },
             }
         }
+    }
+    async fn handle_player_message(msg: Message) {
+        match msg {}
     }
     async fn try_recv(o: &mut Option<Player>) -> Option<Message> {
         if let Some(p) = o {
