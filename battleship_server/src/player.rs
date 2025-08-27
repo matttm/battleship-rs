@@ -1,4 +1,5 @@
-use battleship_models::{self, CellStates};
+use battleship_models::{self, CellStates, Message};
+use tokio::sync::mpsc;
 
 pub enum PlayerStatus {
     Selecting(u8), // u8 is count remaining to be chosen
@@ -8,12 +9,22 @@ pub enum PlayerStatus {
 pub struct Player {
     name: String,
     // status: PlayerStatus,
+    pub tx: mpsc::Sender<Message>,
+    pub rx: mpsc::Receiver<Message>,
     board: Box<[Box<[CellStates]>]>,
 }
 impl Player {
-    pub fn new(name: String, rows: usize, cols: usize) -> Self {
+    pub fn new(
+        name: String,
+        tx: mpsc::Sender<Message>,
+        rx: mpsc::Receiver<Message>,
+        rows: usize,
+        cols: usize,
+    ) -> Self {
         Self {
             name,
+            tx,
+            rx,
             // status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
         }

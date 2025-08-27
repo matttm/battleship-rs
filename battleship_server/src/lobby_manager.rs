@@ -49,14 +49,15 @@ impl LobbyManager {
             // TODO: join match, send it rx_from_task and tx_to_lobby
             let (tx_to_lobby_from_task, rx_from_task) = mpsc::channel(100);
             let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<Message>(100);
-            tx_to_lobby_from_manager
+            if let Err(_) = tx_to_lobby_from_manager
                 .send(ServerMessage::NewConnection(ConnectionDetails {
                     player_id: String::from("1"),
                     tx: tx_to_task,
                     rx: rx_from_task,
                 }))
-                .await;
-            // task for handkking the websocker
+                .await
+            {}
+            // task for handling the websocket
             tokio::spawn(async move {
                 let ws_stream = tokio_tungstenite::accept_async(raw_stream).await.unwrap();
                 let (mut tx, mut rx) = ws_stream.split();

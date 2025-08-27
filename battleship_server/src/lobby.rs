@@ -22,7 +22,12 @@ impl Lobby {
             player_b: None,
         }
     }
-    pub async fn join(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn join(
+        &mut self,
+        id: String,
+        tx: mpsc::Sender<Message>,
+        rx: mpsc::Receiver<Message>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let player_slot = if self.player_a.is_none() {
             &mut self.player_a
         } else {
@@ -30,7 +35,9 @@ impl Lobby {
         };
 
         *player_slot = Some(Player::new(
-            String::from(""),
+            id,
+            tx,
+            rx,
             self.settings.rows,
             self.settings.cols,
         ));
@@ -43,22 +50,25 @@ impl Lobby {
     pub fn get_id(&self) -> String {
         self.id.to_string()
     }
-    pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // send msg to get selections
-        Ok(())
-    }
-    pub async fn broadcast_message(
-        &mut self,
-        payload: &impl Serialize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut recipients = [&mut self.player_a, &mut self.player_b];
-        for opt in recipients.iter_mut() {
-            // Now, `shared_player_option` is `&mut &mut Option<Player>`.
-            // The `if let` statement correctly and safely extracts the mutable reference.
-            if let Some(player) = opt {
-                // `player` is now a `&mut Player`.
+    pub async fn run(&mut self) {
+        loop {
+            tokio::select! {
+                Some(msg) = self.rx_from_manager.recv() => {
+                    match msg {
+                        ServerMessage::NewConnection(details) => {
+                            self.join(details.player_id, details.tx, details.rx);
+                        },
+                    }
+                },
+                Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {},
             }
         }
-        Ok(())
+    }
+    async fn try_recv(o: &mut Option<Player>) -> Option<Message> {
+        if let Some(p) = o {
+            p.rx.recv().await
+        } else {
+            None
+        }
     }
 }
