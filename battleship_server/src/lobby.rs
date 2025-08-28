@@ -1,5 +1,5 @@
-use crate::{player::Player, server_messages::ServerMessage};
-use battleship_models::{self, Message, SelectionCriteria};
+use crate::{player::Player, manager_message::ManagerMessage};
+use battleship_models::{self, GameStates, GameMessage, SelectionCriteria};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -8,12 +8,12 @@ pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
     settings: battleship_models::Settings,
-    rx_from_manager: mpsc::Receiver<ServerMessage>,
+    rx_from_manager: mpsc::Receiver<ManagerMessage>,
     player_a: Option<Player>,
     player_b: Option<Player>,
 }
 impl Lobby {
-    pub fn new(id: String, rx_from_manager: mpsc::Receiver<ServerMessage>) -> Self {
+    pub fn new(id: String, rx_from_manager: mpsc::Receiver<ManagerMessage>) -> Self {
         Self {
             id,
             settings: battleship_models::Settings { rows: 8, cols: 8 },
@@ -25,8 +25,8 @@ impl Lobby {
     pub fn join(
         &mut self,
         id: String,
-        tx: mpsc::Sender<Message>,
-        rx: mpsc::Receiver<Message>,
+        tx: mpsc::Sender<GameMessage>,
+        rx: mpsc::Receiver<GameMessage>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let player_slot = if self.player_a.is_none() {
             &mut self.player_a
@@ -55,7 +55,7 @@ impl Lobby {
             tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
-                        ServerMessage::NewConnection(details) => {
+                        ManagerMessage::NewConnection(details) => {
                             if let Err(_) = self.join(details.player_id, details.tx, details.rx) {}
                         },
                     }
@@ -69,10 +69,11 @@ impl Lobby {
             }
         }
     }
-    async fn handle_player_message(msg: Message) {
-        match msg {}
+    async fn handle_player_message(msg: GameMessage) {
+        let data = msg.payload;
+        match data {}
     }
-    async fn try_recv(o: &mut Option<Player>) -> Option<Message> {
+    async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {
             p.rx.recv().await
         } else {

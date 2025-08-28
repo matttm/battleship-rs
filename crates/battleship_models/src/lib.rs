@@ -32,7 +32,7 @@ pub enum GameStates {
     GameOver,
 }
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Message {
+pub struct GameMessage {
     pub id: u32,
     pub sender: String,
     pub payload: GameStates,

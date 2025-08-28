@@ -1,4 +1,4 @@
-use battleship_models::{self, CellStates, Message};
+use battleship_models::{self, CellStates, GameMessage};
 use tokio::sync::mpsc;
 
 pub enum PlayerStatus {
@@ -9,15 +9,15 @@ pub enum PlayerStatus {
 pub struct Player {
     name: String,
     // status: PlayerStatus,
-    pub tx: mpsc::Sender<Message>,
-    pub rx: mpsc::Receiver<Message>,
+    pub tx: mpsc::Sender<GameMessage>,
+    pub rx: mpsc::Receiver<GameMessage>,
     board: Box<[Box<[CellStates]>]>,
 }
 impl Player {
     pub fn new(
         name: String,
-        tx: mpsc::Sender<Message>,
-        rx: mpsc::Receiver<Message>,
+        tx: mpsc::Sender<GameMessage>,
+        rx: mpsc::Receiver<GameMessage>,
         rows: usize,
         cols: usize,
     ) -> Self {

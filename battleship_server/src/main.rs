@@ -1,7 +1,7 @@
 pub mod lobby;
 pub mod lobby_manager;
 pub mod player;
-pub mod server_messages;
+pub mod manager_message;
 
 use crate::lobby_manager::LobbyManager;
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use battleship_models::Message;
+use battleship_models::GameMessage;
 use futures_util::{SinkExt, StreamExt, lock::Mutex};
 use log::info;
 use tokio::{
@@ -11,12 +11,12 @@ use tokio_tungstenite::tungstenite;
 
 use crate::{
     lobby::Lobby,
-    server_messages::{ConnectionDetails, ServerMessage},
+    manager_message::{ConnectionDetails, ManagerMessage},
 };
 
 pub struct LobbyManager {
     url: String,
-    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<ServerMessage>>>>,
+    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<ManagerMessage>>>>,
 }
 
 impl LobbyManager {
@@ -48,9 +48,9 @@ impl LobbyManager {
             });
             // TODO: join match, send it rx_from_task and tx_to_lobby
             let (tx_to_lobby_from_task, rx_from_task) = mpsc::channel(100);
-            let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<Message>(100);
+            let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<GameMessage>(100);
             if let Err(_) = tx_to_lobby_from_manager
-                .send(ServerMessage::NewConnection(ConnectionDetails {
+                .send(ManagerMessage::NewConnection(ConnectionDetails {
                     player_id: String::from("1"),
                     tx: tx_to_task,
                     rx: rx_from_task,
@@ -65,7 +65,7 @@ impl LobbyManager {
                     tokio::select! {
                         Some(Ok(tungstenite::Message::Text(tung_msg))) = rx.next() => {
                             let s = tung_msg.to_string();
-                            if let Ok(msg) = serde_json::from_str::<Message>(&s) {
+                            if let Ok(msg) = serde_json::from_str::<GameMessage>(&s) {
                                 if
                                 let Err(_) = tx_to_lobby_from_task.send(msg).await {}
                             } else {}
