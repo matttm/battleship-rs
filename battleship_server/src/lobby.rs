@@ -1,5 +1,5 @@
-use crate::{player::Player, manager_message::ManagerMessage};
-use battleship_models::{self, GameStates, GameMessage, SelectionCriteria};
+use crate::{manager_message::ManagerMessage, player::Player};
+use battleship_models::{self, GameMessage, GameStates, SelectionCriteria};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};

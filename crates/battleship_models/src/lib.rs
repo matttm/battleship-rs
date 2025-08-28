@@ -24,16 +24,25 @@ pub struct SelectionCriteria {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
-pub enum GameStates {
-    InitializeGame(Settings),
-    SelectionMode(SelectionCriteria),
+pub enum ClientCommand {
     PlaceShip(Coordinates),
     LaunchMissle(Coordinates),
+}
+#[derive(Serialize, Deserialize, Clone)]
+pub enum ServerCommand {
+    InitializeGame(Settings),
+    SelectionMode(SelectionCriteria),
+    Text(String),
     GameOver,
+}
+#[derive(Serialize, Deserialize, Clone)]
+pub enum Payload {
+    ClientCommand(ClientCommand),
+    ServerCommand(ServerCommand),
 }
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GameMessage {
     pub id: u32,
     pub sender: String,
-    pub payload: GameStates,
+    pub payload: Payload,
 }
