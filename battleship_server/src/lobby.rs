@@ -1,5 +1,5 @@
 use crate::{manager_message::ManagerMessage, player::Player};
-use battleship_models::{self, GameMessage, GameStates, SelectionCriteria};
+use battleship_models::{self, GameMessage, SelectionCriteria, Settings};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -27,7 +27,7 @@ impl Lobby {
         id: String,
         tx: mpsc::Sender<GameMessage>,
         rx: mpsc::Receiver<GameMessage>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> &Option<Player> {
         let player_slot = if self.player_a.is_none() {
             &mut self.player_a
         } else {
@@ -42,7 +42,7 @@ impl Lobby {
             self.settings.cols,
         ));
 
-        Ok(())
+        player_slot
     }
     pub fn is_lobby_full(&self) -> bool {
         self.player_a.is_some() && self.player_b.is_some()
@@ -56,7 +56,10 @@ impl Lobby {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
-                            if let Err(_) = self.join(details.player_id, details.tx, details.rx) {}
+                            if let Some(player) = self.join(details.player_id, details.tx, details.rx) {
+                                player.tx.send(GameMessage { id: 1, sender: String::from(""), payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(Settings { rows: 8, cols: 8 })) }).await;
+                            } else {
+                            }
                         },
                     }
                 },
@@ -70,8 +73,15 @@ impl Lobby {
         }
     }
     async fn handle_player_message(msg: GameMessage) {
+        let sender = msg.sender;
         let data = msg.payload;
-        match data {}
+        if let battleship_models::Payload::ClientCommand(command) = data {
+            match command {
+                battleship_models::ClientCommand::PlaceShip(coordinates) => {}
+                battleship_models::ClientCommand::LaunchMissle(coordinates) => {}
+            }
+        } else {
+        }
     }
     async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {
