@@ -9,8 +9,8 @@ pub enum CellStates {
 }
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct Coordinates {
-    pub x: u32,
-    pub y: u32,
+    pub x: usize,
+    pub y: usize,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]

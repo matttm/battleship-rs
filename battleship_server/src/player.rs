@@ -7,7 +7,7 @@ pub enum PlayerStatus {
     Idle,
 }
 pub struct Player {
-    name: String,
+    pub name: String,
     // status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
@@ -27,6 +27,18 @@ impl Player {
             rx,
             // status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
+        }
+    }
+    pub fn place_ship(
+        &mut self,
+        row: usize,
+        col: usize,
+    ) -> Result<CellStates, Box<dyn std::error::Error>> {
+        let current = &self.board[row][col];
+        match current {
+            CellStates::Empty => self.set_cell(row, col, CellStates::Boat),
+            CellStates::Boat => Err("There is already a ship at this position.".into()),
+            _ => Ok(current.clone()),
         }
     }
     pub fn strike_cell(

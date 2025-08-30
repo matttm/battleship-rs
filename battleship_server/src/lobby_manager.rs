@@ -46,7 +46,6 @@ impl LobbyManager {
                 });
                 tx_to_lobby
             });
-            // TODO: join match, send it rx_from_task and tx_to_lobby
             let (tx_to_lobby_from_task, rx_from_task) = mpsc::channel(100);
             let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<GameMessage>(100);
             if let Err(_) = tx_to_lobby_from_manager
@@ -70,7 +69,7 @@ impl LobbyManager {
                                 let Err(_) = tx_to_lobby_from_task.send(msg).await {}
                             } else {}
                         },
-                            Some(bs_msg) = rx_from_lobby.recv() => {
+                        Some(bs_msg) = rx_from_lobby.recv() => {
                             if let Ok(json) = serde_json::to_string(&bs_msg) {
                                 let tung_msg = tungstenite::protocol::Message::text(json);
                                 if let Err(_) = tx.send(tung_msg).await {}

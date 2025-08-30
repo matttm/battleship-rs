@@ -1,5 +1,5 @@
 use crate::{manager_message::ManagerMessage, player::Player};
-use battleship_models::{self, GameMessage, SelectionCriteria, Settings};
+use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, Settings};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -50,35 +50,41 @@ impl Lobby {
     pub fn get_id(&self) -> String {
         self.id.to_string()
     }
-    pub async fn run(&mut self) {
+    pub async fn run(mut self) {
         loop {
             tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
+                            let settings = self.settings;
                             if let Some(player) = self.join(details.player_id, details.tx, details.rx) {
-                                player.tx.send(GameMessage { id: 1, sender: String::from(""), payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(Settings { rows: 8, cols: 8 })) }).await;
+                                if let Err(_) = player.tx.send(GameMessage { id: 1, sender: String::from(""), payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(settings)) }).await {}
                             } else {
                             }
                         },
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
-                        Self::handle_player_message(msg).await;
+                        Self::handle_player_message(&mut self, msg).await;
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
-                        Self::handle_player_message(msg).await;
+                        Self::handle_player_message(&mut self, msg).await;
                 },
             }
         }
     }
-    async fn handle_player_message(msg: GameMessage) {
-        let sender = msg.sender;
+    async fn handle_player_message(&mut self, msg: GameMessage) {
+        let player = self.get_mut_player(msg.sender);
         let data = msg.payload;
+        let mut reply;
         if let battleship_models::Payload::ClientCommand(command) = data {
             match command {
-                battleship_models::ClientCommand::PlaceShip(coordinates) => {}
-                battleship_models::ClientCommand::LaunchMissle(coordinates) => {}
+                battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
+                    player.place_ship(y, x);
+                }
+                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
+                    player.strike_cell(y, x);
+                }
             }
         } else {
         }
@@ -88,6 +94,19 @@ impl Lobby {
             p.rx.recv().await
         } else {
             None
+        }
+    }
+    fn get_mut_player(&mut self, name: String) -> &mut Player {
+        assert!(self.player_a.is_some() && self.player_b.is_some());
+        match (&mut self.player_a, &mut self.player_b) {
+            (Some(player_a), Some(player_b)) => {
+                if player_a.name == name {
+                    player_a
+                } else {
+                    player_b
+                }
+            }
+            _ => panic!("Players are not initialized."),
         }
     }
 }
