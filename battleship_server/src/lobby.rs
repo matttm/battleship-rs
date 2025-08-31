@@ -4,6 +4,11 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
 
+struct PlayerState {
+    pub ships_to_place: usize,
+    pub ships_alive: usize,
+}
+
 pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
@@ -56,9 +61,10 @@ impl Lobby {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
+                            let id = self.id.clone();
                             let settings = self.settings;
                             if let Some(player) = self.join(details.player_id, details.tx, details.rx) {
-                                if let Err(_) = player.tx.send(GameMessage { id: 1, sender: String::from(""), payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(settings)) }).await {}
+                                if let Err(_) = player.tx.send(GameMessage { id: 1, sender: id, payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(settings)) }).await {}
                             } else {
                             }
                         },
@@ -71,20 +77,32 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await;
                 },
             }
+            Self::progress_state();
         }
     }
     async fn handle_player_message(&mut self, msg: GameMessage) {
-        let player = self.get_mut_player(msg.sender);
         let data = msg.payload;
-        let mut reply;
         if let battleship_models::Payload::ClientCommand(command) = data {
+            // TODO: move set cell fns?
             match command {
                 battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
-                    player.place_ship(y, x);
+                    let player = self.get_mut_player(msg.sender);
+                    if let Ok(msg) = player.place_ship(y, x) {
+                        if let Err(_) = player
+                            .tx
+                            .send(GameMessage {
+                                id: 1,
+                                sender: self.id,
+                                payload: battleship_models::Payload::ServerCommand(
+                                    battleship_models::ServerCommand::Text(msg),
+                                ),
+                            })
+                            .await
+                        {}
+                    } else {
+                    }
                 }
-                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
-                    player.strike_cell(y, x);
-                }
+                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {}
             }
         } else {
         }
@@ -101,6 +119,19 @@ impl Lobby {
         match (&mut self.player_a, &mut self.player_b) {
             (Some(player_a), Some(player_b)) => {
                 if player_a.name == name {
+                    player_a
+                } else {
+                    player_b
+                }
+            }
+            _ => panic!("Players are not initialized."),
+        }
+    }
+    fn get_opposite_mut_player(&mut self, name: String) -> &mut Player {
+        assert!(self.player_a.is_some() && self.player_b.is_some());
+        match (&mut self.player_a, &mut self.player_b) {
+            (Some(player_a), Some(player_b)) => {
+                if player_a.name != name {
                     player_a
                 } else {
                     player_b
