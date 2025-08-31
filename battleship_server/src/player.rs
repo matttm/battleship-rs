@@ -2,13 +2,14 @@ use battleship_models::{self, CellStates, GameMessage};
 use tokio::sync::mpsc;
 
 pub enum PlayerStatus {
+    Initialized,
     Selecting(u8), // u8 is count remaining to be chosen
     Deciding,
     Idle,
 }
 pub struct Player {
     pub name: String,
-    // status: PlayerStatus,
+    status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
     board: Box<[Box<[CellStates]>]>,
@@ -27,7 +28,7 @@ impl Player {
             name,
             tx,
             rx,
-            // status: PlayerStatus::Idle,
+            status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
             ships_to_place: 0,
             ships_alive: 0,
@@ -64,7 +65,7 @@ impl Player {
             }
             CellStates::Boat => {
                 self.set_cell(row, col, CellStates::Hit);
-                Ok(String::from("Criticsl hit"))
+                Ok(String::from("Critical hit"))
             }
             _ => Err("".into()),
         }

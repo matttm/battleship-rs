@@ -77,7 +77,7 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await;
                 },
             }
-            Self::progress_state();
+            self.progress_state();
         }
     }
     async fn handle_player_message(&mut self, msg: GameMessage) {
@@ -107,6 +107,7 @@ impl Lobby {
         } else {
         }
     }
+    async fn progress_state(&mut self) {}
     async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {
             p.rx.recv().await
