@@ -82,15 +82,8 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await?
                 },
             };
-            player
-                .tx
-                .send(GameMessage {
-                    id: 1,
-                    sender: id,
-                    payload: battleship_models::Payload::ServerCommand(server_command),
-                })
-                .await?;
-            self.progress_state();
+            self.broadcast(battleship_models::Payload::ServerCommand(server_command));
+            let next_state: Option<ServerCommand> = self.progress_state();
         }
     }
     async fn handle_player_message(
@@ -117,6 +110,22 @@ impl Lobby {
         }
     }
     async fn progress_state(&mut self) {}
+    async fn broadcast(&self, payload: Payload) {
+        let players = vec![];
+        let mut iter = players.iter();
+        while let Some(player) = iter.next() {
+            // TODO: replace with broaccast
+            player
+                .unwrap()
+                .tx
+                .send(GameMessage {
+                    id: 1,
+                    sender: self.id.clone(),
+                    payload: battleship_models::Payload::ServerCommand(payload),
+                })
+                .await;
+        }
+    }
     async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {
             p.rx.recv().await
