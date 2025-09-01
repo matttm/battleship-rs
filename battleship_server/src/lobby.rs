@@ -103,13 +103,17 @@ impl Lobby {
             match command {
                 battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                     let player = self.get_mut_player(msg.sender);
-                    let msg = player.place_ship(y, x)?;
-                    Ok(battleship_models::ServerCommand::Text(msg))
+                    let _ = player.place_ship(y, x)?;
+                    Ok(battleship_models::ServerCommand::Text(String::from("")))
                 }
-                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {}
+                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
+                    let player = self.get_opposite_mut_player(msg.sender);
+                    let _ = player.strike_cell(y, x)?;
+                    Ok(battleship_models::ServerCommand::Text(String::from("")))
+                }
             }
         } else {
-            Err()
+            Ok(battleship_models::ServerCommand::Text(String::from("")))
         }
     }
     async fn progress_state(&mut self) {}

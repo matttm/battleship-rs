@@ -34,20 +34,10 @@ impl Player {
             ships_alive: 0,
         }
     }
-    pub fn place_ship(
-        &mut self,
-        row: usize,
-        col: usize,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn place_ship(&mut self, row: usize, col: usize) -> Result<(), Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         match current {
-            CellStates::Empty => {
-                if let Ok(_) = self.set_cell(row, col, CellStates::Boat) {
-                    Ok(String::from("Boat placed"))
-                } else {
-                    Err("Error placing boat".into())
-                }
-            }
+            CellStates::Empty => self.set_cell(row, col, CellStates::Boat),
             CellStates::Boat => Err("There is already a ship at this position.".into()),
             _ => Err("Unknown error".into()),
         }
@@ -56,16 +46,16 @@ impl Player {
         &mut self,
         row: usize,
         col: usize,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         match current {
             CellStates::Empty => {
-                self.set_cell(row, col, CellStates::Miss);
-                Ok(String::from("Miss Fire"))
+                self.set_cell(row, col, CellStates::Miss)?;
+                Ok(false)
             }
             CellStates::Boat => {
-                self.set_cell(row, col, CellStates::Hit);
-                Ok(String::from("Critical hit"))
+                self.set_cell(row, col, CellStates::Hit)?;
+                Ok(true)
             }
             _ => Err("".into()),
         }
