@@ -1,5 +1,9 @@
+use std::error::Error;
+
 use crate::{manager_message::ManagerMessage, player::Player};
-use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, Settings};
+use battleship_models::{
+    self, Coordinates, GameMessage, Payload, SelectionCriteria, ServerCommand, Settings,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::{net::TcpStream, sync::mpsc};
@@ -55,56 +59,57 @@ impl Lobby {
     pub fn get_id(&self) -> String {
         self.id.to_string()
     }
-    pub async fn run(mut self) {
+    pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
+        let id = self.id.clone();
         loop {
-            tokio::select! {
+            let server_command = tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
-                            let id = self.id.clone();
                             let settings = self.settings;
                             if let Some(player) = self.join(details.player_id, details.tx, details.rx) {
-                                if let Err(_) = player.tx.send(GameMessage { id: 1, sender: id, payload: battleship_models::Payload::ServerCommand(battleship_models::ServerCommand::InitializeGame(settings)) }).await {}
+                                battleship_models::ServerCommand::InitializeGame(settings)
                             } else {
+                                battleship_models::ServerCommand::Text(String::from(""))
                             }
                         },
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
-                        Self::handle_player_message(&mut self, msg).await;
+                        Self::handle_player_message(&mut self, msg).await?
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
-                        Self::handle_player_message(&mut self, msg).await;
+                        Self::handle_player_message(&mut self, msg).await?
                 },
-            }
+            };
+            player
+                .tx
+                .send(GameMessage {
+                    id: 1,
+                    sender: id,
+                    payload: battleship_models::Payload::ServerCommand(server_command),
+                })
+                .await?;
             self.progress_state();
         }
     }
-    async fn handle_player_message(&mut self, msg: GameMessage) {
+    async fn handle_player_message(
+        &mut self,
+        msg: GameMessage,
+    ) -> Result<ServerCommand, Box<dyn Error>> {
         let data = msg.payload;
         if let battleship_models::Payload::ClientCommand(command) = data {
             // TODO: move set cell fns?
             match command {
                 battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                     let player = self.get_mut_player(msg.sender);
-                    if let Ok(msg) = player.place_ship(y, x) {
-                        if let Err(_) = player
-                            .tx
-                            .send(GameMessage {
-                                id: 1,
-                                sender: self.id,
-                                payload: battleship_models::Payload::ServerCommand(
-                                    battleship_models::ServerCommand::Text(msg),
-                                ),
-                            })
-                            .await
-                        {}
-                    } else {
-                    }
+                    let msg = player.place_ship(y, x)?;
+                    Ok(battleship_models::ServerCommand::Text(msg))
                 }
                 battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {}
             }
         } else {
+            Err()
         }
     }
     async fn progress_state(&mut self) {}
