@@ -9,11 +9,10 @@ pub enum PlayerStatus {
 }
 pub struct Player {
     pub name: String,
-    status: PlayerStatus,
+    pub status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
     board: Box<[Box<[CellStates]>]>,
-    pub ships_to_place: usize,
     pub ships_alive: usize,
 }
 impl Player {
@@ -30,7 +29,6 @@ impl Player {
             rx,
             status: PlayerStatus::Idle,
             board: Self::initialize_board(rows, cols),
-            ships_to_place: 0,
             ships_alive: 0,
         }
     }

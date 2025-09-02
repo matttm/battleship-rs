@@ -1,22 +1,29 @@
 use std::error::Error;
 
-use crate::{manager_message::ManagerMessage, player::Player};
+use crate::{
+    manager_message::ManagerMessage,
+    player::{Player, PlayerStatus},
+};
 use battleship_models::{
     self, Coordinates, GameMessage, Payload, SelectionCriteria, ServerCommand, Settings,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
-use tokio::{net::TcpStream, sync::mpsc};
+use tokio::sync::mpsc;
 
-struct PlayerState {
-    pub ships_to_place: usize,
-    pub ships_alive: usize,
+enum GameStatus {
+    Uninitialized,
+    Initialized,
+    SelectMode,
+    PlayerALaunch,
+    PlayerBLaunch,
+    GameOver,
 }
 
 pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
     id: String,
     settings: battleship_models::Settings,
+    status: GameStatus,
     rx_from_manager: mpsc::Receiver<ManagerMessage>,
     player_a: Option<Player>,
     player_b: Option<Player>,
@@ -26,6 +33,7 @@ impl Lobby {
         Self {
             id,
             settings: battleship_models::Settings { rows: 8, cols: 8 },
+            status: GameStatus::Uninitialized,
             rx_from_manager,
             player_a: None,
             player_b: None,
@@ -36,7 +44,7 @@ impl Lobby {
         id: String,
         tx: mpsc::Sender<GameMessage>,
         rx: mpsc::Receiver<GameMessage>,
-    ) -> &Option<Player> {
+    ) -> &mut Option<Player> {
         let player_slot = if self.player_a.is_none() {
             &mut self.player_a
         } else {
@@ -67,7 +75,8 @@ impl Lobby {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
                             let settings = self.settings;
-                            if let Some(player) = self.join(details.player_id, details.tx, details.rx) {
+                            if let Some(player) = self.join(details.player_id, details.tx, details.rx).as_mut() {
+                                player.status = PlayerStatus::Initialized;
                                 battleship_models::ServerCommand::InitializeGame(settings)
                             } else {
                                 battleship_models::ServerCommand::Text(String::from(""))
@@ -82,7 +91,7 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await?
                 },
             };
-            self.broadcast(battleship_models::Payload::ServerCommand(server_command));
+            self.broadcast(server_command);
             let next_state: Option<ServerCommand> = self.progress_state();
         }
     }
@@ -109,19 +118,27 @@ impl Lobby {
             Ok(battleship_models::ServerCommand::Text(String::from("")))
         }
     }
-    async fn progress_state(&mut self) {}
-    async fn broadcast(&self, payload: Payload) {
-        let players = vec![];
+    async fn progress_state(&mut self) -> Option<ServerCommand> {
+        match &self.status {
+            GameStatus::Uninitialized => [],
+            GameStatus::Initialized => {}
+            GameStatus::SelectMode => {}
+            GameStatus::PlayerALaunch => {}
+            GameStatus::PlayerBLaunch => {}
+            GameStatus::GameOver => {}
+        };
+    }
+    async fn broadcast(&self, data: ServerCommand) {
+        let players = vec![&self.player_a, &self.player_b];
         let mut iter = players.iter();
-        while let Some(player) = iter.next() {
+        while let Some(Some(player)) = iter.next() {
             // TODO: replace with broaccast
             player
-                .unwrap()
                 .tx
                 .send(GameMessage {
                     id: 1,
                     sender: self.id.clone(),
-                    payload: battleship_models::Payload::ServerCommand(payload),
+                    payload: battleship_models::Payload::ServerCommand(data.clone()),
                 })
                 .await;
         }
