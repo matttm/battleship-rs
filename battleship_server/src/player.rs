@@ -2,6 +2,7 @@ use battleship_models::{self, CellStates, GameMessage};
 use tokio::sync::mpsc;
 
 pub enum PlayerStatus {
+    Uninitialized,
     Initialized,
     Selecting(u8), // u8 is count remaining to be chosen
     Deciding,
@@ -27,7 +28,7 @@ impl Player {
             name,
             tx,
             rx,
-            status: PlayerStatus::Idle,
+            status: PlayerStatus::Uninitialized,
             board: Self::initialize_board(rows, cols),
             ships_alive: 0,
         }

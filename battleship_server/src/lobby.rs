@@ -12,8 +12,7 @@ use tokio::sync::mpsc;
 
 enum GameStatus {
     Uninitialized,
-    Initialized,
-    SelectMode,
+    SelectionMode,
     PlayerALaunch,
     PlayerBLaunch,
     GameOver,
@@ -91,8 +90,8 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await?
                 },
             };
-            self.broadcast(server_command);
-            let next_state: Option<ServerCommand> = self.progress_state();
+            self.broadcast(server_command).await;
+            let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
         }
     }
     async fn handle_player_message(
@@ -118,15 +117,20 @@ impl Lobby {
             Ok(battleship_models::ServerCommand::Text(String::from("")))
         }
     }
-    async fn progress_state(&mut self) -> Option<ServerCommand> {
+    async fn progress_lobby_state(&mut self) -> Option<ServerCommand> {
         match &self.status {
-            GameStatus::Uninitialized => [],
-            GameStatus::Initialized => {}
-            GameStatus::SelectMode => {}
-            GameStatus::PlayerALaunch => {}
-            GameStatus::PlayerBLaunch => {}
-            GameStatus::GameOver => {}
-        };
+            GameStatus::Uninitialized => match (&mut self.player_a, &mut self.player_b) {
+                (Some(a), Some(b)) => {
+                    self.status = GameStatus::SelectionMode;
+                    Some(ServerCommand::SelectionMode(SelectionCriteria { count: 4 }))
+                }
+                _ => None,
+            },
+            GameStatus::SelectionMode => None,
+            GameStatus::PlayerALaunch => None,
+            GameStatus::PlayerBLaunch => None,
+            GameStatus::GameOver => None,
+        }
     }
     async fn broadcast(&self, data: ServerCommand) {
         let players = vec![&self.player_a, &self.player_b];
