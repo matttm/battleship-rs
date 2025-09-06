@@ -13,8 +13,7 @@ use tokio::sync::mpsc;
 enum GameStatus {
     Uninitialized,
     SelectionMode,
-    PlayerALaunch,
-    PlayerBLaunch,
+    PlayerTurn(String), // whose turn it is
     GameOver,
 }
 
@@ -90,8 +89,11 @@ impl Lobby {
                         Self::handle_player_message(&mut self, msg).await?
                 },
             };
-            self.broadcast(server_command).await;
+            self.broadcast(server_command).await?;
             let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
+            if let Some(state) = next_state {
+                self.broadcast(state).await?;
+            }
         }
     }
     async fn handle_player_message(
@@ -118,25 +120,56 @@ impl Lobby {
         }
     }
     async fn progress_lobby_state(&mut self) -> Option<ServerCommand> {
+        let a = self.player_a.as_mut()?;
+        let b = self.player_b.as_mut()?;
+        let a_name = a.name.clone();
+        let b_name = b.name.clone();
         match &self.status {
             GameStatus::Uninitialized => match (&mut self.player_a, &mut self.player_b) {
                 (Some(a), Some(b)) => {
                     self.status = GameStatus::SelectionMode;
+                    a.status = PlayerStatus::Selecting(4);
+                    b.status = PlayerStatus::Selecting(4);
                     Some(ServerCommand::SelectionMode(SelectionCriteria { count: 4 }))
                 }
                 _ => None,
             },
-            GameStatus::SelectionMode => None,
-            GameStatus::PlayerALaunch => None,
-            GameStatus::PlayerBLaunch => None,
+            GameStatus::SelectionMode => {
+                if let (PlayerStatus::Selecting(x), PlayerStatus::Selecting(y)) =
+                    (&a.status, &b.status)
+                {
+                    if *x == 0 && *y == 0 {
+                        self.status = GameStatus::PlayerTurn(a_name.clone());
+                        Some(ServerCommand::PlayerTurn(a_name))
+                    } else {
+                        Some(ServerCommand::Text(format!(
+                            "Selection(s) remaining -- {x} - {y}"
+                        )))
+                    }
+                } else {
+                    None
+                }
+            }
+            GameStatus::PlayerTurn(name) => {
+                // TODO: add a check to see if player launched or not
+                // getting player who wasn launched at
+                let (bomber, bombed_player) = if a_name == *name { (a, b) } else { (b, a) };
+                if bombed_player.ships_alive == 0 {
+                    self.status = GameStatus::GameOver;
+                    Some(ServerCommand::GameOver)
+                } else {
+                    self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
+                    Some(ServerCommand::PlayerTurn(bombed_player.name.clone()))
+                }
+            }
             GameStatus::GameOver => None,
         }
     }
-    async fn broadcast(&self, data: ServerCommand) {
+    async fn broadcast(&self, data: ServerCommand) -> Result<(), Box<dyn Error>> {
         let players = vec![&self.player_a, &self.player_b];
         let mut iter = players.iter();
         while let Some(Some(player)) = iter.next() {
-            // TODO: replace with broaccast
+            // TODO: replace with tokio::broaccast
             player
                 .tx
                 .send(GameMessage {
@@ -144,8 +177,9 @@ impl Lobby {
                     sender: self.id.clone(),
                     payload: battleship_models::Payload::ServerCommand(data.clone()),
                 })
-                .await;
+                .await?;
         }
+        Ok(())
     }
     async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {

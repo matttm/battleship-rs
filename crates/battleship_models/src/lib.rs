@@ -32,6 +32,7 @@ pub enum ClientCommand {
 pub enum ServerCommand {
     InitializeGame(Settings),
     SelectionMode(SelectionCriteria),
+    PlayerTurn(String), // the string is whose turn it is
     Text(String),
     GameOver,
 }
