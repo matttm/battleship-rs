@@ -213,3 +213,58 @@ impl Lobby {
         }
     }
 }
+
+#[tokio::test]
+async fn test_lobby_game_lifecycle() {
+	use crate::lobby::Lobby;
+	use battleship_models::*;
+	use tokio::sync::mpsc;
+
+	// Setup manager channel
+	let (tx_manager, rx_manager) = mpsc::channel(10);
+	// Setup player channels
+	let (tx_a, mut rx_a) = mpsc::channel(10);
+	let (tx_b, mut rx_b) = mpsc::channel(10);
+	let (tx_a_in, rx_a_in) = mpsc::channel(10);
+	let (tx_b_in, rx_b_in) = mpsc::channel(10);
+
+	// Create lobby
+	let mut lobby = Lobby::new("test_lobby".to_string(), rx_manager);
+	// Join two players
+	lobby.join("A".to_string(), tx_a.clone(), rx_a_in);
+	lobby.join("B".to_string(), tx_b.clone(), rx_b_in);
+	assert!(lobby.is_lobby_full());
+
+	// Simulate game start
+	let settings = Settings { rows: 8, cols: 8 };
+	let init_cmd = ServerCommand::InitializeGame(settings);
+	let _ = lobby.broadcast(init_cmd.clone()).await;
+	// Both players should receive InitializeGame
+	let msg_a = rx_a.recv().await.unwrap();
+	let msg_b = rx_b.recv().await.unwrap();
+	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::InitializeGame(_))));
+	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::InitializeGame(_))));
+
+	// Simulate selection mode
+	let select_cmd = ServerCommand::SelectionMode(SelectionCriteria { count: 4 });
+	let _ = lobby.broadcast(select_cmd.clone()).await;
+	let msg_a = rx_a.recv().await.unwrap();
+	let msg_b = rx_b.recv().await.unwrap();
+	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::SelectionMode(_))));
+	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::SelectionMode(_))));
+
+	// Simulate player turns and game over
+	let turn_cmd = ServerCommand::PlayerTurn("A".to_string());
+	let _ = lobby.broadcast(turn_cmd.clone()).await;
+	let msg_a = rx_a.recv().await.unwrap();
+	let msg_b = rx_b.recv().await.unwrap();
+	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::PlayerTurn(_))));
+	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::PlayerTurn(_))));
+
+	let game_over_cmd = ServerCommand::GameOver;
+	let _ = lobby.broadcast(game_over_cmd.clone()).await;
+	let msg_a = rx_a.recv().await.unwrap();
+	let msg_b = rx_b.recv().await.unwrap();
+	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::GameOver)));
+	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::GameOver)));
+}
