@@ -42,7 +42,7 @@ impl LobbyManager {
                 let (tx_to_lobby, rx_from_manager) = mpsc::channel(100);
                 // task for the lobby and game kgic
                 tokio::spawn(async move {
-                    Lobby::new(id_clone, rx_from_manager).run();
+                    if let Err(_) = Lobby::new(id_clone, rx_from_manager).run().await {}
                 });
                 tx_to_lobby
             });

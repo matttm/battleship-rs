@@ -4,9 +4,7 @@ use crate::{
     manager_message::ManagerMessage,
     player::{Player, PlayerStatus},
 };
-use battleship_models::{
-    self, Coordinates, GameMessage, Payload, SelectionCriteria, ServerCommand, Settings,
-};
+use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
