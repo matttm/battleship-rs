@@ -50,7 +50,7 @@ impl LobbyManager {
             let (tx_to_task, mut rx_from_lobby) = mpsc::channel::<GameMessage>(100);
             if let Err(_) = tx_to_lobby_from_manager
                 .send(ManagerMessage::NewConnection(ConnectionDetails {
-                    player_id: String::from("1"),
+                    player_name: String::from("In manager"),
                     tx: tx_to_task,
                     rx: rx_from_task,
                 }))

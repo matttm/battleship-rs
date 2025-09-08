@@ -4,8 +4,8 @@ use tokio::sync::mpsc;
 pub enum PlayerStatus {
     Uninitialized,
     Initialized,
-    Selecting(u8),  // u8 is count remaining to be chosen
-    Deciding(bool), // bool is whether player has launched missle yet
+    Selecting(usize), // usizes count remaining to be chosen
+    Deciding(bool),   // bool is whether player has launched missle yet
     Idle,
 }
 pub struct Player {
