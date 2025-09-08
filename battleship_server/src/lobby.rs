@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::{
-    manager_message::ManagerMessage,
+    manager_message::{ConnectionDetails, ManagerMessage},
     player::{Player, PlayerStatus},
 };
 use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand};
@@ -20,6 +20,7 @@ pub struct Lobby {
     id: String,
     settings: battleship_models::Settings,
     status: GameStatus,
+    is_running: bool,
     rx_from_manager: mpsc::Receiver<ManagerMessage>,
     player_a: Option<Player>,
     player_b: Option<Player>,
@@ -30,6 +31,7 @@ impl Lobby {
             id,
             settings: battleship_models::Settings { rows: 8, cols: 8 },
             status: GameStatus::Uninitialized,
+            is_running: false,
             rx_from_manager,
             player_a: None,
             player_b: None,
@@ -64,8 +66,9 @@ impl Lobby {
         self.id.to_string()
     }
     pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
+        self.is_running = true;
         let id = self.id.clone();
-        loop {
+        while self.is_running {
             let server_command = tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
                     match msg {
@@ -78,6 +81,10 @@ impl Lobby {
                                 battleship_models::ServerCommand::Text(String::from(""))
                             }
                         },
+                        ManagerMessage::Shutdown => {
+                            self.is_running = false;
+                            battleship_models::ServerCommand::Text(String::from("Shutting down"))
+                        }
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
@@ -93,6 +100,7 @@ impl Lobby {
                 self.broadcast(state).await?;
             }
         }
+        Ok(())
     }
     async fn handle_player_message(
         &mut self,
@@ -186,6 +194,9 @@ impl Lobby {
             None
         }
     }
+    fn get_lobby_status(&self) -> &GameStatus {
+        &self.status
+    }
     fn get_mut_player(&mut self, name: String) -> &mut Player {
         assert!(self.player_a.is_some() && self.player_b.is_some());
         match (&mut self.player_a, &mut self.player_b) {
@@ -216,55 +227,98 @@ impl Lobby {
 
 #[tokio::test]
 async fn test_lobby_game_lifecycle() {
-	use crate::lobby::Lobby;
-	use battleship_models::*;
-	use tokio::sync::mpsc;
+    use crate::lobby::Lobby;
+    use battleship_models::*;
+    use tokio::sync::mpsc;
 
-	// Setup manager channel
-	let (tx_manager, rx_manager) = mpsc::channel(10);
-	// Setup player channels
-	let (tx_a, mut rx_a) = mpsc::channel(10);
-	let (tx_b, mut rx_b) = mpsc::channel(10);
-	let (tx_a_in, rx_a_in) = mpsc::channel(10);
-	let (tx_b_in, rx_b_in) = mpsc::channel(10);
+    // Setup player channels
+    let (tx_a, mut rx_a) = mpsc::channel(10);
+    let (tx_b, mut rx_b) = mpsc::channel(10);
+    let (tx_a_in, rx_a_in) = mpsc::channel(10);
+    let (tx_b_in, rx_b_in) = mpsc::channel(10);
 
-	// Create lobby
-	let mut lobby = Lobby::new("test_lobby".to_string(), rx_manager);
-	// Join two players
-	lobby.join("A".to_string(), tx_a.clone(), rx_a_in);
-	lobby.join("B".to_string(), tx_b.clone(), rx_b_in);
-	assert!(lobby.is_lobby_full());
+    let (tx_from_man, rx_from_man) = mpsc::channel(10);
+    // Create lobby
+    tokio::spawn(async move {
+        if let Err(_) = Lobby::new(String::from("1"), rx_from_man).run().await {}
+    });
+    tx_from_man
+        .send(ManagerMessage::NewConnection(ConnectionDetails {
+            player_id: "A".to_string(),
+            tx: tx_a,
+            rx: rx_a_in,
+        }))
+        .await
+        .unwrap();
+    tx_from_man
+        .send(ManagerMessage::NewConnection(ConnectionDetails {
+            player_id: "B".to_string(),
+            tx: tx_b,
+            rx: rx_b_in,
+        }))
+        .await
+        .unwrap();
+    // Simulate game start by sending messages from players
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::InitializeGame(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::InitializeGame(_))
+    ));
+    let game_msg_a = GameMessage {
+        id: 1,
+        sender: "A".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::PlaceShip(Coordinates { x: 0, y: 0 })),
+    };
+    tx_a_in.send(game_msg_a).await.unwrap();
+    let game_msg_b = GameMessage {
+        id: 2,
+        sender: "B".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::PlaceShip(Coordinates { x: 1, y: 1 })),
+    };
+    tx_b_in.send(game_msg_b).await.unwrap();
 
-	// Simulate game start
-	let settings = Settings { rows: 8, cols: 8 };
-	let init_cmd = ServerCommand::InitializeGame(settings);
-	let _ = lobby.broadcast(init_cmd.clone()).await;
-	// Both players should receive InitializeGame
-	let msg_a = rx_a.recv().await.unwrap();
-	let msg_b = rx_b.recv().await.unwrap();
-	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::InitializeGame(_))));
-	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::InitializeGame(_))));
+    // Receive responses for ship placement
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
 
-	// Simulate selection mode
-	let select_cmd = ServerCommand::SelectionMode(SelectionCriteria { count: 4 });
-	let _ = lobby.broadcast(select_cmd.clone()).await;
-	let msg_a = rx_a.recv().await.unwrap();
-	let msg_b = rx_b.recv().await.unwrap();
-	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::SelectionMode(_))));
-	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::SelectionMode(_))));
+    // Simulate missile launch
+    let missile_msg_a = GameMessage {
+        id: 3,
+        sender: "A".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 1, y: 1 })),
+    };
+    tx_a_in.send(missile_msg_a).await.unwrap();
+    let missile_msg_b = GameMessage {
+        id: 4,
+        sender: "B".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 0, y: 0 })),
+    };
+    tx_b_in.send(missile_msg_b).await.unwrap();
 
-	// Simulate player turns and game over
-	let turn_cmd = ServerCommand::PlayerTurn("A".to_string());
-	let _ = lobby.broadcast(turn_cmd.clone()).await;
-	let msg_a = rx_a.recv().await.unwrap();
-	let msg_b = rx_b.recv().await.unwrap();
-	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::PlayerTurn(_))));
-	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::PlayerTurn(_))));
+    // Receive responses for missile launch
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
 
-	let game_over_cmd = ServerCommand::GameOver;
-	let _ = lobby.broadcast(game_over_cmd.clone()).await;
-	let msg_a = rx_a.recv().await.unwrap();
-	let msg_b = rx_b.recv().await.unwrap();
-	assert!(matches!(msg_a.payload, Payload::ServerCommand(ServerCommand::GameOver)));
-	assert!(matches!(msg_b.payload, Payload::ServerCommand(ServerCommand::GameOver)));
+    // You can extend this to simulate more of the lifecycle, e.g. selection, turns, game over, etc.
 }

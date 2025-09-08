@@ -9,4 +9,5 @@ pub struct ConnectionDetails {
 
 pub enum ManagerMessage {
     NewConnection(ConnectionDetails),
+    Shutdown,
 }
