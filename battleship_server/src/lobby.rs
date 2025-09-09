@@ -87,7 +87,7 @@ impl Lobby {
                             let settings = self.settings;
                             if let Some(player) = self.join(details.player_name, details.tx, details.rx).as_mut() {
                                 player.status = PlayerStatus::Initialized;
-                                (NotificationType::DirectMessage(player.name), battleship_models::ServerCommand::InitializeGame(settings))
+                                (NotificationType::DirectMessage(player.name.clone()), battleship_models::ServerCommand::InitializeGame(settings))
                             } else {
                                 (NotificationType::NoMessage, battleship_models::ServerCommand::Text(String::from("")))
                             }
@@ -125,8 +125,16 @@ impl Lobby {
             match command {
                 battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                     let player = self.get_mut_player(msg.sender);
-                    let _ = player.place_ship(y, x)?;
-                    Ok(battleship_models::ServerCommand::Text(String::from("")))
+                    if let PlayerStatus::Selecting(cnt) = player.status {
+                        if cnt == 0 {
+                            return Err("No ships remaining to place".into());
+                        }
+                        player.status = PlayerStatus::Selecting(cnt - 1);
+                        let _ = player.place_ship(y, x)?;
+                        Ok(battleship_models::ServerCommand::Text(String::from("Ship placed")))
+                    } else {
+                        Err("Player not in selection mode".into())
+                    }
                 }
                 battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
                     let player = self.get_opposite_mut_player(msg.sender);
@@ -150,7 +158,7 @@ impl Lobby {
                     self.status = GameStatus::SelectionMode;
                     a.status = PlayerStatus::Selecting(cnt);
                     b.status = PlayerStatus::Selecting(cnt);
-                    Some(ServerCommand::SelectionMode(SelectionCriteria { count: 4 }))
+                    Some(ServerCommand::SelectionMode(SelectionCriteria { count: cnt }))
                 }
                 _ => None,
             },
@@ -202,25 +210,33 @@ impl Lobby {
         Ok(())
     }
 
-    async fn direct_message(&self, player: &Player, data: ServerCommand) -> Result<(), Box<dyn Error>> {
-    player
-        .tx
-        .send(GameMessage {
-            id: 1,
-            sender: self.id.clone(),
-            payload: battleship_models::Payload::ServerCommand(data.clone()),
-        })
-        .await?;
+    async fn direct_message(
+        &self,
+        player: &Player,
+        data: ServerCommand,
+    ) -> Result<(), Box<dyn Error>> {
+        player
+            .tx
+            .send(GameMessage {
+                id: 1,
+                sender: self.id.clone(),
+                payload: battleship_models::Payload::ServerCommand(data.clone()),
+            })
+            .await?;
         Ok(())
     }
 
-    async fn send_message(&self, notification_type: NotificationType, data: ServerCommand) -> Result<(), Box<dyn Error>> {
+    async fn send_message(
+        &self,
+        notification_type: NotificationType,
+        data: ServerCommand,
+    ) -> Result<(), Box<dyn Error>> {
         match notification_type {
             NotificationType::Broadcast => {
                 return self.broadcast(data).await;
             }
             NotificationType::DirectMessage(name) => {
-                let player = self.get_player(name);
+                let player = self.get_player(name)?;
                 return self.direct_message(player, data).await;
             }
             NotificationType::NoMessage => {
@@ -255,17 +271,17 @@ impl Lobby {
             _ => panic!("Players are not initialized."),
         }
     }
-    fn get_player(&self, name: String) -> &Player {
-        assert!(self.player_a.is_some() && self.player_b.is_some());
-        match (&self.player_a, &self.player_b) {
-            (Some(player_a), Some(player_b)) => {
-                if player_a.name == name {
-                    player_a
-                } else {
-                    player_b
-                }
-            }
-            _ => panic!("Players are not initialized."),
+    fn get_player(&self, name: String) -> Result<&Player, Box<dyn Error>> {
+        if let Some(player) = &self.player_a
+            && name == player.name
+        {
+            Ok(player)
+        } else if let Some(player) = &self.player_b
+            && name == player.name
+        {
+            Ok(player)
+        } else {
+            Err("Player not found".into())
         }
     }
     fn get_opposite_mut_player(&mut self, name: String) -> &mut Player {
@@ -298,7 +314,7 @@ async fn test_lobby_game_lifecycle() {
     let (tx_from_man, rx_from_man) = mpsc::channel(10);
     // Create lobby
     let handle = tokio::spawn(async move {
-        if let Err(_) = Lobby::new(String::from("1"), rx_from_man)
+        if let Err(r) = Lobby::new(String::from("1"), rx_from_man)
             .set_settings(battleship_models::Settings {
                 rows: 2,
                 cols: 2,
@@ -306,8 +322,11 @@ async fn test_lobby_game_lifecycle() {
             })
             .run()
             .await
-        {}
+        {
+            dbg!("Error occured in test lobby {:?}", r);
+        }
     });
+    dbg!("Lobby started");
     tx_from_man
         .send(ManagerMessage::NewConnection(ConnectionDetails {
             player_name: "A".to_string(),
@@ -337,6 +356,20 @@ async fn test_lobby_game_lifecycle() {
         msg_b.payload,
         Payload::ServerCommand(ServerCommand::InitializeGame(_))
     ));
+    // ensure new state is selection mode
+    let msg_a = rx_a.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_a);
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_b);
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::SelectionMode(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::SelectionMode(_))
+    ));
+    
     let game_msg_a = GameMessage {
         id: 1,
         sender: "A".to_string(),
@@ -355,15 +388,15 @@ async fn test_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_a);
     let msg_b = rx_b.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_b);
-    // assert!(matches!(
-    //     msg_a.payload,
-    //     Payload::ServerCommand(ServerCommand::Text(_))
-    // ));
-    // assert!(matches!(
-    //     msg_b.payload,
-    //     Payload::ServerCommand(ServerCommand::Text(_))
-    // ));
-    //
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
+    
     // // Simulate missile launch
     // let missile_msg_a = GameMessage {
     //     id: 3,
@@ -389,7 +422,7 @@ async fn test_lobby_game_lifecycle() {
     //     msg_b.payload,
     //     Payload::ServerCommand(ServerCommand::Text(_))
     // ));
-    // tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
+    tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
     handle.await.unwrap();
     // You can extend this to simulate more of the lifecycle, e.g. selection, turns, game over, etc.
 }
