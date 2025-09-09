@@ -15,6 +15,11 @@ enum GameStatus {
     PlayerTurn(String), // whose turn it is
     GameOver,
 }
+enum NotificationType {
+    Broadcast,
+    DirectMessage(String),
+    NoMessage,
+}
 
 pub struct Lobby {
     // TODO: give the lobby and lobby manager a channel to communicate
@@ -74,7 +79,7 @@ impl Lobby {
         self.is_running = true;
         let id = self.id.clone();
         while self.is_running {
-            let server_command = tokio::select! {
+            let (notification_type, server_command) = tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
                     dbg!("Received manager msg {:#?}", &msg);
                     match msg {
@@ -82,27 +87,27 @@ impl Lobby {
                             let settings = self.settings;
                             if let Some(player) = self.join(details.player_name, details.tx, details.rx).as_mut() {
                                 player.status = PlayerStatus::Initialized;
-                                battleship_models::ServerCommand::InitializeGame(settings)
+                                (NotificationType::DirectMessage(player.name), battleship_models::ServerCommand::InitializeGame(settings))
                             } else {
-                                battleship_models::ServerCommand::Text(String::from(""))
+                                (NotificationType::NoMessage, battleship_models::ServerCommand::Text(String::from("")))
                             }
                         },
                         ManagerMessage::Shutdown => {
                             self.is_running = false;
-                            battleship_models::ServerCommand::Text(String::from("Shutting down"))
+                            (NotificationType::Broadcast, battleship_models::ServerCommand::Text(String::from("Shutting down")))
                         }
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
                         dbg!("Received player msg {:#?}", &msg);
-                        self.handle_player_message(msg).await?
+                        (NotificationType::DirectMessage("A".to_string()), self.handle_player_message(msg).await?)
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
                         dbg!("Received player msg {:#?}", &msg);
-                        self.handle_player_message(msg).await?
+                        (NotificationType::DirectMessage("B".to_string()), self.handle_player_message(msg).await?)
                 },
             };
-            self.direct_message(player, server_command).await?;
+            self.send_message(notification_type, server_command).await?;
             let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
             if let Some(state) = next_state {
                 self.broadcast(state).await?;
@@ -208,6 +213,21 @@ impl Lobby {
         .await?;
         Ok(())
     }
+
+    async fn send_message(&self, notification_type: NotificationType, data: ServerCommand) -> Result<(), Box<dyn Error>> {
+        match notification_type {
+            NotificationType::Broadcast => {
+                return self.broadcast(data).await;
+            }
+            NotificationType::DirectMessage(name) => {
+                let player = self.get_player(name);
+                return self.direct_message(player, data).await;
+            }
+            NotificationType::NoMessage => {
+                return Ok(());
+            }
+        };
+    }
     async fn try_recv(o: &mut Option<Player>) -> Option<GameMessage> {
         if let Some(p) = o {
             p.rx.recv().await
@@ -225,6 +245,19 @@ impl Lobby {
     fn get_mut_player(&mut self, name: String) -> &mut Player {
         assert!(self.player_a.is_some() && self.player_b.is_some());
         match (&mut self.player_a, &mut self.player_b) {
+            (Some(player_a), Some(player_b)) => {
+                if player_a.name == name {
+                    player_a
+                } else {
+                    player_b
+                }
+            }
+            _ => panic!("Players are not initialized."),
+        }
+    }
+    fn get_player(&self, name: String) -> &Player {
+        assert!(self.player_a.is_some() && self.player_b.is_some());
+        match (&self.player_a, &self.player_b) {
             (Some(player_a), Some(player_b)) => {
                 if player_a.name == name {
                     player_a
