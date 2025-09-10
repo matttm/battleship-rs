@@ -131,7 +131,9 @@ impl Lobby {
                         }
                         player.status = PlayerStatus::Selecting(cnt - 1);
                         let _ = player.place_ship(y, x)?;
-                        Ok(battleship_models::ServerCommand::Text(String::from("Ship placed")))
+                        Ok(battleship_models::ServerCommand::Text(String::from(
+                            "Ship placed",
+                        )))
                     } else {
                         Err("Player not in selection mode".into())
                     }
@@ -158,22 +160,18 @@ impl Lobby {
                     self.status = GameStatus::SelectionMode;
                     a.status = PlayerStatus::Selecting(cnt);
                     b.status = PlayerStatus::Selecting(cnt);
-                    Some(ServerCommand::SelectionMode(SelectionCriteria { count: cnt }))
+                    Some(ServerCommand::SelectionMode(SelectionCriteria {
+                        count: cnt,
+                    }))
                 }
                 _ => None,
             },
             GameStatus::SelectionMode => {
-                if let (PlayerStatus::Selecting(x), PlayerStatus::Selecting(y)) =
+                if let (&PlayerStatus::Selecting(0), &PlayerStatus::Selecting(0)) =
                     (&a.status, &b.status)
                 {
-                    if *x == 0 && *y == 0 {
-                        self.status = GameStatus::PlayerTurn(a_name.clone());
-                        Some(ServerCommand::PlayerTurn(a_name))
-                    } else {
-                        Some(ServerCommand::Text(format!(
-                            "Selection(s) remaining -- {x} - {y}"
-                        )))
-                    }
+                    self.status = GameStatus::PlayerTurn(a_name.clone());
+                    Some(ServerCommand::PlayerTurn(a_name))
                 } else {
                     None
                 }
@@ -369,7 +367,7 @@ async fn test_lobby_game_lifecycle() {
         msg_b.payload,
         Payload::ServerCommand(ServerCommand::SelectionMode(_))
     ));
-    
+
     let game_msg_a = GameMessage {
         id: 1,
         sender: "A".to_string(),
@@ -396,7 +394,19 @@ async fn test_lobby_game_lifecycle() {
         msg_b.payload,
         Payload::ServerCommand(ServerCommand::Text(_))
     ));
-    
+    let msg_a = rx_a.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_a);
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_b);
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+    ));
+
     // // Simulate missile launch
     // let missile_msg_a = GameMessage {
     //     id: 3,
