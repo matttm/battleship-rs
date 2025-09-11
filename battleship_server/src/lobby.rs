@@ -171,6 +171,7 @@ impl Lobby {
                     (&a.status, &b.status)
                 {
                     self.status = GameStatus::PlayerTurn(a_name.clone());
+                    a.status = PlayerStatus::Deciding(true); // true means missle loadec
                     Some(ServerCommand::PlayerTurn(a_name))
                 } else {
                     None
@@ -183,9 +184,13 @@ impl Lobby {
                 if bombed_player.ships_alive == 0 {
                     self.status = GameStatus::GameOver;
                     Some(ServerCommand::GameOver)
-                } else {
+                } else if let PlayerStatus::Deciding(false) = bomber.status {
+                    // false indicates missle fired
                     self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
+                    bombed_player.status = PlayerStatus::Deciding(true);
                     Some(ServerCommand::PlayerTurn(bombed_player.name.clone()))
+                } else {
+                    None
                 }
             }
             GameStatus::GameOver => None,
@@ -407,31 +412,33 @@ async fn test_lobby_game_lifecycle() {
         Payload::ServerCommand(ServerCommand::PlayerTurn(_))
     ));
 
-    // // Simulate missile launch
-    // let missile_msg_a = GameMessage {
-    //     id: 3,
-    //     sender: "A".to_string(),
-    //     payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 1, y: 1 })),
-    // };
-    // tx_a_in.send(missile_msg_a).await.unwrap();
-    // let missile_msg_b = GameMessage {
-    //     id: 4,
-    //     sender: "B".to_string(),
-    //     payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 0, y: 0 })),
-    // };
-    // tx_b_in.send(missile_msg_b).await.unwrap();
-    //
-    // // Receive responses for missile launch
-    // let msg_a = rx_a.recv().await.unwrap();
-    // let msg_b = rx_b.recv().await.unwrap();
-    // assert!(matches!(
-    //     msg_a.payload,
-    //     Payload::ServerCommand(ServerCommand::Text(_))
-    // ));
-    // assert!(matches!(
-    //     msg_b.payload,
-    //     Payload::ServerCommand(ServerCommand::Text(_))
-    // ));
+    // Simulate missile launch
+    let missile_msg_a = GameMessage {
+        id: 3,
+        sender: "A".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 1, y: 1 })),
+    };
+    tx_a_in.send(missile_msg_a).await.unwrap();
+    let missile_msg_b = GameMessage {
+        id: 4,
+        sender: "B".to_string(),
+        payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 0, y: 0 })),
+    };
+    tx_b_in.send(missile_msg_b).await.unwrap();
+
+    // Receive responses for missile launch
+    let msg_a = rx_a.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_a);
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_b);
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::Text(_))
+    ));
     tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
     handle.await.unwrap();
     // You can extend this to simulate more of the lifecycle, e.g. selection, turns, game over, etc.
