@@ -119,33 +119,40 @@ impl Lobby {
         &mut self,
         msg: GameMessage,
     ) -> Result<ServerCommand, Box<dyn Error>> {
-        let data = msg.payload;
-        if let battleship_models::Payload::ClientCommand(command) = data {
-            // TODO: move set cell fns?
-            match command {
-                battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
-                    let player = self.get_mut_player(msg.sender);
-                    if let PlayerStatus::Selecting(cnt) = player.status {
-                        if cnt == 0 {
-                            return Err("No ships remaining to place".into());
+        let player_id = msg.sender;
+
+        // Use a match statement to handle different payload types.
+        match msg.payload {
+            battleship_models::Payload::ClientCommand(command) => {
+                // Use a nested match to handle different commands.
+                match command {
+                    battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
+                        let player = self.get_mut_player(player_id);
+
+                        // Use if let to concisely check the player's status.
+                        if let PlayerStatus::Selecting(cnt) = &mut player.status {
+                            if *cnt == 0 {
+                                return Err("No ships remaining to place".into());
+                            }
+
+                            // Decrement the count directly and place the ship.
+                            *cnt -= 1;
+                            let _ = player.place_ship(y, x)?;
+                            Ok(battleship_models::ServerCommand::Text(String::from(
+                                "Ship placed",
+                            )))
+                        } else {
+                            Err("Player not in selection mode".into())
                         }
-                        player.status = PlayerStatus::Selecting(cnt - 1);
-                        let _ = player.place_ship(y, x)?;
-                        Ok(battleship_models::ServerCommand::Text(String::from(
-                            "Ship placed",
-                        )))
-                    } else {
-                        Err("Player not in selection mode".into())
+                    }
+                    battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
+                        let player = self.get_opposite_mut_player(player_id);
+                        let _ = player.strike_cell(y, x)?;
+                        Ok(battleship_models::ServerCommand::Text(String::from("")))
                     }
                 }
-                battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
-                    let player = self.get_opposite_mut_player(msg.sender);
-                    let _ = player.strike_cell(y, x)?;
-                    Ok(battleship_models::ServerCommand::Text(String::from("")))
-                }
             }
-        } else {
-            Ok(battleship_models::ServerCommand::Text(String::from("")))
+            _ => Ok(battleship_models::ServerCommand::Text(String::from(""))),
         }
     }
     async fn progress_lobby_state(&mut self) -> Option<ServerCommand> {
