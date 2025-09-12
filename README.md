@@ -10,7 +10,7 @@ As of 9/12/25, this reposiitory includes an initial version of a game server, us
 
 Assuming you have cargo and rust installed, from the root directory, run
 ```
-cargo build
+❯ cargo build
 ```
 
 Then run
@@ -23,7 +23,7 @@ The `nocapture` flag prevents debug output from being hidden.
 
 This section will document key design decisions made for this project.
 
-- initially, I tried to maintain a reference to the lobby inside of the lobby manager, which proves to be very difficult.
+- Initially, I tried to maintain a reference to the lobby inside of the lobby manager, which proves to be very difficult because of Rust's ownership rules. I then changed this design, so the LobbyManager holds a channel to every Lobby instead of a reference.
 
 ## Authors
 
