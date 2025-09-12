@@ -129,26 +129,33 @@ impl Lobby {
                     battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                         let player = self.get_mut_player(player_id);
 
+                        let is_placed = player.place_ship(y, x)?;
                         // Use if let to concisely check the player's status.
                         if let PlayerStatus::Selecting(cnt) = &mut player.status {
                             if *cnt == 0 {
                                 return Err("No ships remaining to place".into());
                             }
 
-                            // Decrement the count directly and place the ship.
-                            *cnt -= 1;
-                            let _ = player.place_ship(y, x)?;
-                            Ok(battleship_models::ServerCommand::Text(String::from(
-                                "Ship placed",
-                            )))
+                            if is_placed {
+                                // Decrement the count directly and place the ship.
+                                *cnt -= 1;
+                                Ok(battleship_models::ServerCommand::Text(String::from(
+                                    "Ship placed",
+                                )))
+                            } else {
+                                Err("No ships remaining to place".into())
+                            }
                         } else {
                             Err("Player not in selection mode".into())
                         }
                     }
                     battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
                         let player = self.get_opposite_mut_player(player_id);
-                        let _ = player.strike_cell(y, x)?;
-                        Ok(battleship_models::ServerCommand::Text(String::from("")))
+                        let state = player.strike_cell(y, x)?;
+                        Ok(battleship_models::ServerCommand::LaunchMissle(
+                            state,
+                            Coordinates { x, y },
+                        ))
                     }
                 }
             }

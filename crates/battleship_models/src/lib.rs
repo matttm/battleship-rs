@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum CellStates {
     Empty,
     Boat,
@@ -34,6 +34,7 @@ pub enum ServerCommand {
     InitializeGame(Settings),
     SelectionMode(SelectionCriteria),
     PlayerTurn(String), // the string is whose turn it is
+    LaunchMissle(CellStates, Coordinates),
     Text(String),
     GameOver,
 }
