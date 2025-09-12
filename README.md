@@ -2,9 +2,22 @@
 
 ## Description
 
-A two-player recreation of the classic board game written in Rust.
+A two-player recreation of the classic tabletop game written in Rust.
+
+As of 9/12/25, this reposiitory includes an initial version of a game server, using the websocket protocol. 
 
 ## Getting Started
+
+Assuming you have cargo and rust installed, from the root directory, run
+```
+cargo build
+```
+
+Then run
+```
+❯ cargo test -p battleship_server --bin battleship_server -- --nocapture
+```
+The `nocapture` flag prevents debug output from being hidden.
 
 ## Design Decisions
 
