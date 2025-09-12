@@ -100,11 +100,11 @@ impl Lobby {
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
                         dbg!("Received player msg {:#?}", &msg);
-                        (NotificationType::DirectMessage("A".to_string()), self.handle_player_message(msg).await?)
+                        self.handle_player_message(msg).await?
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
                         dbg!("Received player msg {:#?}", &msg);
-                        (NotificationType::DirectMessage("B".to_string()), self.handle_player_message(msg).await?)
+                        self.handle_player_message(msg).await?
                 },
             };
             self.send_message(notification_type, server_command).await?;
@@ -118,7 +118,7 @@ impl Lobby {
     async fn handle_player_message(
         &mut self,
         msg: GameMessage,
-    ) -> Result<ServerCommand, Box<dyn Error>> {
+    ) -> Result<(NotificationType, ServerCommand), Box<dyn Error>> {
         let player_id = msg.sender;
 
         // Use a match statement to handle different payload types.
@@ -139,9 +139,12 @@ impl Lobby {
                             if is_placed {
                                 // Decrement the count directly and place the ship.
                                 *cnt -= 1;
-                                Ok(battleship_models::ServerCommand::Text(String::from(
-                                    "Ship placed",
-                                )))
+                                Ok((
+                                    NotificationType::DirectMessage(player.name.clone()),
+                                    battleship_models::ServerCommand::Text(String::from(
+                                        "Ship placed",
+                                    )),
+                                ))
                             } else {
                                 Err("No ships remaining to place".into())
                             }
@@ -152,14 +155,17 @@ impl Lobby {
                     battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
                         let player = self.get_opposite_mut_player(player_id);
                         let state = player.strike_cell(y, x)?;
-                        Ok(battleship_models::ServerCommand::LaunchMissle(
-                            state,
-                            Coordinates { x, y },
+                        Ok((
+                            NotificationType::Broadcast,
+                            battleship_models::ServerCommand::LaunchMissle(
+                                state,
+                                Coordinates { x, y },
+                            ),
                         ))
                     }
                 }
             }
-            _ => Ok(battleship_models::ServerCommand::Text(String::from(""))),
+            _ => Err("".into()),
         }
     }
     async fn progress_lobby_state(&mut self) -> Option<ServerCommand> {
@@ -447,11 +453,11 @@ async fn test_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_b);
     assert!(matches!(
         msg_a.payload,
-        Payload::ServerCommand(ServerCommand::Text(_))
+        Payload::ServerCommand(ServerCommand::LaunchMissle(_, _))
     ));
     assert!(matches!(
         msg_b.payload,
-        Payload::ServerCommand(ServerCommand::Text(_))
+        Payload::ServerCommand(ServerCommand::LaunchMissle(_, _))
     ));
     tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
     handle.await.unwrap();
