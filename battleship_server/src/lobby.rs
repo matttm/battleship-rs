@@ -49,7 +49,6 @@ impl Lobby {
     }
     pub fn join(
         &mut self,
-        id: String,
         tx: mpsc::Sender<GameMessage>,
         rx: mpsc::Receiver<GameMessage>,
     ) -> &mut Option<Player> {
@@ -59,13 +58,7 @@ impl Lobby {
             &mut self.player_b
         };
 
-        *player_slot = Some(Player::new(
-            id,
-            tx,
-            rx,
-            self.settings.rows,
-            self.settings.cols,
-        ));
+        *player_slot = Some(Player::new(tx, rx, self.settings.rows, self.settings.cols));
 
         player_slot
     }
@@ -85,9 +78,14 @@ impl Lobby {
                     match msg {
                         ManagerMessage::NewConnection(details) => {
                             let settings = self.settings;
-                            if let Some(player) = self.join(details.player_name, details.tx, details.rx).as_mut() {
+                            if let Some(player) = self.join(details.tx, details.rx).as_mut() {
+                                let player_id = player.id.clone();
                                 player.status = PlayerStatus::Initialized;
-                                (NotificationType::DirectMessage(player.name.clone()), battleship_models::ServerCommand::InitializeGame(settings))
+                                (NotificationType::DirectMessage(player_id.clone()),
+                                    battleship_models::ServerCommand::InitializeGame(
+                                        player_id,
+                                        settings
+                                    ))
                             } else {
                                 (NotificationType::NoMessage, battleship_models::ServerCommand::Text(String::from("")))
                             }
@@ -140,7 +138,7 @@ impl Lobby {
                                 // Decrement the count directly and place the ship.
                                 *cnt -= 1;
                                 Ok((
-                                    NotificationType::DirectMessage(player.name.clone()),
+                                    NotificationType::DirectMessage(player.id.clone()),
                                     battleship_models::ServerCommand::Text(String::from(
                                         "Ship placed",
                                     )),
@@ -161,6 +159,13 @@ impl Lobby {
                                 state,
                                 Coordinates { x, y },
                             ),
+                        ))
+                    }
+                    battleship_models::ClientCommand::SetProfile(_) => {
+                        // TODO: send a uuid as a temp username and then remap with this
+                        Ok((
+                            NotificationType::Broadcast,
+                            battleship_models::ServerCommand::SetProfileConfirmation,
                         ))
                     }
                 }
@@ -258,8 +263,8 @@ impl Lobby {
             NotificationType::Broadcast => {
                 return self.broadcast(data).await;
             }
-            NotificationType::DirectMessage(name) => {
-                let player = self.get_player(name)?;
+            NotificationType::DirectMessage(id) => {
+                let player = self.get_player(id)?;
                 return self.direct_message(player, data).await;
             }
             NotificationType::NoMessage => {
@@ -281,11 +286,11 @@ impl Lobby {
     fn get_lobby_status(&self) -> &GameStatus {
         &self.status
     }
-    fn get_mut_player(&mut self, name: String) -> &mut Player {
+    fn get_mut_player(&mut self, id: String) -> &mut Player {
         assert!(self.player_a.is_some() && self.player_b.is_some());
         match (&mut self.player_a, &mut self.player_b) {
             (Some(player_a), Some(player_b)) => {
-                if player_a.name == name {
+                if player_a.id == id {
                     player_a
                 } else {
                     player_b
@@ -294,24 +299,24 @@ impl Lobby {
             _ => panic!("Players are not initialized."),
         }
     }
-    fn get_player(&self, name: String) -> Result<&Player, Box<dyn Error>> {
+    fn get_player(&self, id: String) -> Result<&Player, Box<dyn Error>> {
         if let Some(player) = &self.player_a
-            && name == player.name
+            && id == player.id
         {
             Ok(player)
         } else if let Some(player) = &self.player_b
-            && name == player.name
+            && id == player.id
         {
             Ok(player)
         } else {
             Err("Player not found".into())
         }
     }
-    fn get_opposite_mut_player(&mut self, name: String) -> &mut Player {
+    fn get_opposite_mut_player(&mut self, id: String) -> &mut Player {
         assert!(self.player_a.is_some() && self.player_b.is_some());
         match (&mut self.player_a, &mut self.player_b) {
             (Some(player_a), Some(player_b)) => {
-                if player_a.name != name {
+                if player_a.id != id {
                     player_a
                 } else {
                     player_b
@@ -373,12 +378,22 @@ async fn test_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_b);
     assert!(matches!(
         msg_a.payload,
-        Payload::ServerCommand(ServerCommand::InitializeGame(_))
+        Payload::ServerCommand(ServerCommand::InitializeGame(_, _))
     ));
     assert!(matches!(
         msg_b.payload,
-        Payload::ServerCommand(ServerCommand::InitializeGame(_))
+        Payload::ServerCommand(ServerCommand::InitializeGame(_, _))
     ));
+    let a_id = if let Payload::ServerCommand(ServerCommand::InitializeGame(id, _)) = msg_a.payload {
+        id
+    } else {
+        "A".to_string()
+    };
+    let b_id = if let Payload::ServerCommand(ServerCommand::InitializeGame(id, _)) = msg_b.payload {
+        id
+    } else {
+        "A".to_string()
+    };
     // ensure new state is selection mode
     let msg_a = rx_a.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_a);
@@ -395,13 +410,13 @@ async fn test_lobby_game_lifecycle() {
 
     let game_msg_a = GameMessage {
         id: 1,
-        sender: "A".to_string(),
+        sender: a_id.clone(),
         payload: Payload::ClientCommand(ClientCommand::PlaceShip(Coordinates { x: 0, y: 0 })),
     };
     tx_a_in.send(game_msg_a).await.unwrap();
     let game_msg_b = GameMessage {
         id: 2,
-        sender: "B".to_string(),
+        sender: b_id.clone(),
         payload: Payload::ClientCommand(ClientCommand::PlaceShip(Coordinates { x: 1, y: 1 })),
     };
     tx_b_in.send(game_msg_b).await.unwrap();
@@ -435,13 +450,13 @@ async fn test_lobby_game_lifecycle() {
     // Simulate missile launch
     let missile_msg_a = GameMessage {
         id: 3,
-        sender: "A".to_string(),
+        sender: a_id.clone(),
         payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 1, y: 1 })),
     };
     tx_a_in.send(missile_msg_a).await.unwrap();
     let missile_msg_b = GameMessage {
         id: 4,
-        sender: "B".to_string(),
+        sender: b_id.clone(),
         payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 0, y: 0 })),
     };
     tx_b_in.send(missile_msg_b).await.unwrap();

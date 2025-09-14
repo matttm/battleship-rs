@@ -9,6 +9,7 @@ pub enum PlayerStatus {
     Idle,
 }
 pub struct Player {
+    pub id: String, // uuid
     pub name: String,
     pub status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
@@ -18,14 +19,14 @@ pub struct Player {
 }
 impl Player {
     pub fn new(
-        name: String,
         tx: mpsc::Sender<GameMessage>,
         rx: mpsc::Receiver<GameMessage>,
         rows: usize,
         cols: usize,
     ) -> Self {
         Self {
-            name,
+            id: uuid::Uuid::new_v4().to_string(),
+            name: String::from(""),
             tx,
             rx,
             status: PlayerStatus::Uninitialized,
