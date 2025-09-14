@@ -23,15 +23,21 @@ pub struct Settings {
 pub struct SelectionCriteria {
     pub count: usize,
 }
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Profile {
+    pub name: String,
+}
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ClientCommand {
     PlaceShip(Coordinates),
     LaunchMissle(Coordinates),
+    SetProfile(Profile),
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ServerCommand {
-    InitializeGame(Settings),
+    InitializeGame(String, Settings), // string is server given uuid
+    SetProfileConfirmation,
     SelectionMode(SelectionCriteria),
     PlayerTurn(String), // the string is whose turn it is
     LaunchMissle(CellStates, Coordinates),
