@@ -5,7 +5,7 @@ use futures_util::{SinkExt, StreamExt, lock::Mutex};
 use log::info;
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, oneshot},
+    sync::{mpsc},
 };
 use tokio_tungstenite::tungstenite;
 

@@ -20,5 +20,6 @@ async fn main() {
     let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{url}"))
         .await
         .expect("Cannot connect to game server");
+    let (tx, rx) = socket.split();
     info!("Connection established");
 }
