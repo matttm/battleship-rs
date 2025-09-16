@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use battleship_models::GameMessage;
-use futures_util::{SinkExt, StreamExt, lock::Mutex};
+use futures_util::{Sink, SinkExt, Stream, StreamExt, lock::Mutex};
 use log::info;
 use tokio::{
     net::TcpListener,
@@ -92,4 +92,34 @@ impl LobbyManager {
     }
     // TODO: send an id through  channel to remove the lobby from mp of lobbies?
     pub async fn stop() {}
+    async fn handle_single_message_exchange<T>(
+        rx_stream: &mut T,
+        tx_stream: &mut T,
+        tx_to_lobby_from_task: &mpsc::Sender<battleship_models::GameMessage>,
+        rx_from_lobby: &mut mpsc::Receiver<battleship_models::GameMessage>,
+    ) -> bool
+    where
+        T: Sink<tungstenite::Message>
+            + Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+            + Unpin
+            + Send
+            + 'static,
+    {
+        tokio::select! {
+            Some(Ok(tungstenite::Message::Text(tung_msg))) = rx_stream.next() => {
+                if let Ok(msg) = serde_json::from_str::<battleship_models::GameMessage>(&tung_msg) {
+                    let _ = tx_to_lobby_from_task.send(msg).await;
+                }
+                true // Return true to signal that a message was processed
+            },
+            Some(bs_msg) = rx_from_lobby.recv() => {
+                if let Ok(json) = serde_json::to_string(&bs_msg) {
+                    let tung_msg = tungstenite::protocol::Message::text(json);
+                    let _ = tx_stream.send(tung_msg).await;
+                }
+                true // Return true to signal that a message was processed
+            },
+            else => false // Return false to signal the loop should break
+        }
+    }
 }
