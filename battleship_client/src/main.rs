@@ -8,6 +8,7 @@ use tokio_tungstenite::tungstenite::Message;
 pub mod app;
 pub mod event;
 pub mod ui;
+pub mod widgets;
 
 use app::App;
 

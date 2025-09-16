@@ -1,4 +1,6 @@
-use crate::event::{AppEvent, Event, EventHandler};
+use std::collections::VecDeque;
+
+use crate::{event::{AppEvent, Event, EventHandler}, widgets::notification_pane::NotificationPane};
 use ratatui::{
     DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
@@ -13,6 +15,7 @@ pub struct App {
     pub counter: u8,
     /// Event handler.
     pub events: EventHandler,
+    pub notification_pane: NotificationPane,
 }
 
 impl Default for App {
@@ -21,6 +24,7 @@ impl Default for App {
             running: true,
             counter: 0,
             events: EventHandler::new(),
+            notification_pane: NotificationPane { notifications: VecDeque::new()}
         }
     }
 }
