@@ -27,9 +27,9 @@ impl LobbyManager {
         }
     }
     /// A WebSocket echo server
-    pub async fn start(self) {
+    pub async fn start(&mut self) {
         let url = self.url.to_string();
-        let mut lobbies = self.lobbies;
+        let lobbies = &mut self.lobbies;
         info!("Binding to {}", &url);
         let server = TcpListener::bind(url).await.unwrap();
         let mut id: Option<String> = None;
