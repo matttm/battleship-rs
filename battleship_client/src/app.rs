@@ -1,9 +1,13 @@
 use std::collections::VecDeque;
 
-use crate::{event::{AppEvent, Event, EventHandler}, widgets::notification_pane::NotificationPane};
+use crate::{
+    event::{AppEvent, Event, EventHandler},
+    widgets::notification_pane::NotificationPane,
+};
 use ratatui::{
-    DefaultTerminal,
+    DefaultTerminal, Frame,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+    layout::{Constraint, Direction, Layout},
 };
 
 /// Application.
@@ -24,7 +28,7 @@ impl Default for App {
             running: true,
             counter: 0,
             events: EventHandler::new(),
-            notification_pane: NotificationPane { notifications: VecDeque::new()}
+            notification_pane: NotificationPane::new(VecDeque::new()),
         }
     }
 }
@@ -38,7 +42,9 @@ impl App {
     /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         while self.running {
-            terminal.draw(|frame| frame.render_widget(&self, frame.area()))?;
+            terminal.draw(|frame| {
+                self.render_app(frame);
+            })?;
             match self.events.next().await? {
                 Event::Tick => self.tick(),
                 Event::Crossterm(event) => match event {
@@ -53,6 +59,14 @@ impl App {
             }
         }
         Ok(())
+    }
+    fn render_app(&self, frame: &mut Frame) {
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(70), Constraint::Percentage(20)])
+            .split(frame.area());
+        frame.render_widget(self, layout[0]);
+        frame.render_widget(&self.notification_pane, layout[1]);
     }
 
     /// Handles the key events and updates the state of [`App`].
