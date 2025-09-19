@@ -20,3 +20,5 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: apply-clippy-lints
+      uses: fxwiegand/apply-clippy-lints@v1.0.4
