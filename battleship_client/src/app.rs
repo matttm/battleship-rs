@@ -4,6 +4,8 @@ use crate::{
     event::{AppEvent, Event, EventHandler},
     widgets::notification_pane::NotificationPane,
 };
+use futures::stream::{SplitSink, SplitStream};
+use futures_util::{SinkExt, StreamExt};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
@@ -12,6 +14,8 @@ use ratatui::{
     symbols::scrollbar,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use tokio::net::TcpStream;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 
 /// Application.
 #[derive(Debug)]
@@ -23,23 +27,26 @@ pub struct App {
     /// Event handler.
     pub events: EventHandler,
     pub notification_pane: NotificationPane,
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self {
-            running: true,
-            counter: 0,
-            events: EventHandler::new(),
-            notification_pane: NotificationPane::new(VecDeque::new()),
-        }
-    }
+    tx: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+    rx: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub fn new() -> Self {
-        Self::default()
+    pub async fn new() -> Self {
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://"))
+            .await
+            .expect("Cannot connect to game server");
+        let (tx, rx) = socket.split();
+        let d = Self {
+            running: true,
+            counter: 0,
+            events: EventHandler::new(),
+            notification_pane: NotificationPane::new(VecDeque::new()),
+            tx,
+            rx,
+        };
+        d
     }
 
     /// Run the application's main loop.
