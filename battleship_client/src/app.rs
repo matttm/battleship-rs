@@ -1,9 +1,10 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, error::Error};
 
 use crate::{
     event::{AppEvent, Event, EventHandler},
     widgets::notification_pane::NotificationPane,
 };
+use battleship_models::{ClientCommand, GameMessage};
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use ratatui::{
@@ -14,7 +15,12 @@ use ratatui::{
     symbols::scrollbar,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
-use tokio::net::TcpStream;
+use tokio::{
+    net::TcpStream,
+    select,
+    sync::mpsc::{Receiver, Sender},
+};
+use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 
 /// Application.
@@ -27,26 +33,45 @@ pub struct App {
     /// Event handler.
     pub events: EventHandler,
     pub notification_pane: NotificationPane,
-    tx: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
-    rx: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    tx: Sender<ClientCommand>,
+    rx: Receiver<GameMessage>,
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
-    pub async fn new() -> Self {
-        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://"))
-            .await
-            .expect("Cannot connect to game server");
-        let (tx, rx) = socket.split();
+    pub async fn new() -> Result<Self, Box<dyn Error>> {
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://")).await?;
+        let (tx, mut rx) = socket.split();
+        let (tx_inbound, mut rx_inbound) = tokio::sync::mpsc::channel(100);
+        let (tx_outbound, mut rx_outbound) = tokio::sync::mpsc::channel(100);
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                Some(Ok(tungstenite::Message::Text(msg_json))) = rx.next() => {
+                    let s = msg_json.to_string();
+                    if let Ok(msg) = serde_json::from_str::<GameMessage>(&s) {
+                        if let Err(_) = tx_outbound.send(msg).await {}
+                    }
+                }
+                    Some(bs_msg) = rx_outbound.recv() => {
+                        if let Ok(json) = serde_json::to_string(&bs_msg) {
+                            let tung_msg = tungstenite::protocol::Message::text(json);
+                                if let Err(_) = tx.send(tung_msg).await {}
+                        }
+                    }
+                    else => break
+                }
+            }
+        });
         let d = Self {
             running: true,
             counter: 0,
             events: EventHandler::new(),
             notification_pane: NotificationPane::new(VecDeque::new()),
-            tx,
-            rx,
+            tx: tx_outbound,
+            rx: rx_inbound,
         };
-        d
+        Ok(d)
     }
 
     /// Run the application's main loop.
