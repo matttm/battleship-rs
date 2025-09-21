@@ -23,6 +23,9 @@ impl NotificationPane {
     //     fn build_notification(text: String) -> Paragraph {
     //         Paragraph::new(text).block(Block::new())
     //     }
+    pub fn add_notification(&mut self, text: String) {
+        self.notifications.push_front(text);
+    }
 }
 impl Widget for &NotificationPane {
     fn render(self, area: Rect, buf: &mut Buffer) {
