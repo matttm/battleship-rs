@@ -25,6 +25,13 @@ This section will document key design decisions made for this project.
 
 - Initially, I tried to maintain a reference to the lobby inside of the lobby manager, which proves to be very difficult because of Rust's ownership rules. I then changed this design, so the LobbyManager holds a channel to every Lobby instead of a reference.
 
+## Development Note
+
+Enable logging with:
+```
+RUST_LOG=info cargo run
+```
+
 ## Authors
 
 -   Matt Maloney : matttm
