@@ -41,7 +41,7 @@ pub struct App {
 impl App {
     /// Constructs a new instance of [`App`].
     pub async fn new() -> Result<Self, Box<dyn Error>> {
-        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://")).await?;
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://localhost:9001")).await?;
         let (mut tx, mut rx) = socket.split();
         let (tx_inbound, mut rx_inbound) = tokio::sync::mpsc::channel(100);
         let (tx_outbound, mut rx_outbound) = tokio::sync::mpsc::channel(100);

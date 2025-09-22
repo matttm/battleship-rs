@@ -21,7 +21,7 @@ async fn main() -> color_eyre::Result<()> {
     info!("Connection established");
     color_eyre::install()?;
     let terminal = ratatui::init();
-    let result = App::new().await.run(terminal).await;
+    let result = App::new().await.expect("not to error").run(terminal).await;
     ratatui::restore();
     result
 }
