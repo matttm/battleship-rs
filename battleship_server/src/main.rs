@@ -1,11 +1,11 @@
 pub mod lobby;
 pub mod lobby_manager;
-pub mod player;
 pub mod manager_message;
+pub mod player;
 
 use crate::lobby_manager::LobbyManager;
 
 #[tokio::main]
 async fn main() {
-    LobbyManager::start().await;
+    LobbyManager::new().start().await;
 }

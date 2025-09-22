@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use battleship_models::GameMessage;
-use futures_util::{SinkExt, StreamExt, lock::Mutex};
+use futures_util::{Sink, SinkExt, Stream, StreamExt, lock::Mutex};
 use log::info;
 use tokio::{
     net::TcpListener,
@@ -16,29 +16,33 @@ use crate::{
 
 pub struct LobbyManager {
     url: String,
-    lobbies: Arc<Mutex<HashMap<String, mpsc::Sender<ManagerMessage>>>>,
+    pub lobbies: HashMap<String, mpsc::Sender<ManagerMessage>>,
 }
 
 impl LobbyManager {
-    fn _new() -> Self {
+    pub fn new() -> Self {
         Self {
             url: "127.0.0.1:9001".to_string(),
-            lobbies: Arc::new(Mutex::new(HashMap::new())),
+            lobbies: HashMap::new(),
         }
     }
     /// A WebSocket echo server
-    pub async fn start() {
-        let s = Self::_new();
-        let url = s.url.to_string();
-        let lobbies = Arc::clone(&s.lobbies);
+    pub async fn start(&mut self) {
+        let url = self.url.to_string();
+        let lobbies = &mut self.lobbies;
         info!("Binding to {}", &url);
         let server = TcpListener::bind(url).await.unwrap();
+        let mut id: Option<String> = None;
+        let mut players = 0;
 
         while let Ok((raw_stream, _addr)) = server.accept().await {
-            let id = String::from("id"); // TODO: get this thru a msg?
-            let id_clone = id.clone();
-            let mut lobbies_guard = lobbies.lock().await;
-            let tx_to_lobby_from_manager = lobbies_guard.entry(id).or_insert_with(|| {
+            id = if let None = &id {
+                Some(uuid::Uuid::new_v4().to_string())
+            } else {
+                id
+            };
+            let id_clone = id.as_ref().unwrap().clone();
+            let tx_to_lobby_from_manager = lobbies.entry(id_clone.clone()).or_insert_with(|| {
                 let (tx_to_lobby, rx_from_manager) = mpsc::channel(100);
                 // task for the lobby and game kgic
                 tokio::spawn(async move {
@@ -56,6 +60,11 @@ impl LobbyManager {
                 }))
                 .await
             {}
+            players += 1;
+            if players == 2 {
+                players = 0;
+                id = None;
+            }
             // task for handling the websocket
             tokio::spawn(async move {
                 let ws_stream = tokio_tungstenite::accept_async(raw_stream).await.unwrap();
@@ -83,4 +92,34 @@ impl LobbyManager {
     }
     // TODO: send an id through  channel to remove the lobby from mp of lobbies?
     pub async fn stop() {}
+    async fn handle_single_message_exchange<T>(
+        rx_stream: &mut T,
+        tx_stream: &mut T,
+        tx_to_lobby_from_task: &mpsc::Sender<battleship_models::GameMessage>,
+        rx_from_lobby: &mut mpsc::Receiver<battleship_models::GameMessage>,
+    ) -> bool
+    where
+        T: Sink<tungstenite::Message>
+            + Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+            + Unpin
+            + Send
+            + 'static,
+    {
+        tokio::select! {
+            Some(Ok(tungstenite::Message::Text(tung_msg))) = rx_stream.next() => {
+                if let Ok(msg) = serde_json::from_str::<battleship_models::GameMessage>(&tung_msg) {
+                    let _ = tx_to_lobby_from_task.send(msg).await;
+                }
+                true // Return true to signal that a message was processed
+            },
+            Some(bs_msg) = rx_from_lobby.recv() => {
+                if let Ok(json) = serde_json::to_string(&bs_msg) {
+                    let tung_msg = tungstenite::protocol::Message::text(json);
+                    let _ = tx_stream.send(tung_msg).await;
+                }
+                true // Return true to signal that a message was processed
+            },
+            else => false // Return false to signal the loop should break
+        }
+    }
 }
