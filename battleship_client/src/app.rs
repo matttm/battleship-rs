@@ -4,7 +4,7 @@ use crate::{
     event::{AppEvent, Event, EventHandler},
     widgets::notification_pane::NotificationPane,
 };
-use battleship_models::{ClientCommand, GameMessage, ServerCommand, Settings};
+use battleship_models::{CellStates, ClientCommand, GameMessage, ServerCommand, Settings};
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use ratatui::{
@@ -22,7 +22,11 @@ use tokio::{
 };
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
+use tracing::info;
 
+pub struct GameState {
+    pub board: Vec<<Vec<CellStates>>
+}
 /// Application.
 #[derive(Debug)]
 pub struct App {
@@ -33,6 +37,7 @@ pub struct App {
     /// Event handler.
     pub events: EventHandler,
     pub settings: Option<Settings>,
+    pub state: Option<GameState>,
     pub notification_pane: NotificationPane,
     tx: Sender<GameMessage>,
     rx: Receiver<GameMessage>,
@@ -50,12 +55,14 @@ impl App {
                 tokio::select! {
                 Some(Ok(tungstenite::Message::Text(msg_json))) = rx.next() => {
                     let s = msg_json.to_string();
+                    info!("Inbound json message {}", s);
                     if let Ok(msg) = serde_json::from_str::<GameMessage>(&s) {
                         if let Err(_) = tx_inbound.send(msg).await {}
                     }
                 }
                     Some(bs_msg) = rx_outbound.recv() => {
                         if let Ok(json) = serde_json::to_string(&bs_msg) {
+                    info!("Outbound json message {}", json);
                             let tung_msg = tungstenite::protocol::Message::text(json);
                                 if let Err(_) = tx.send(tung_msg).await {}
                         }
@@ -69,6 +76,7 @@ impl App {
             counter: 0,
             events: EventHandler::new(),
             settings: None,
+            state: None,
             notification_pane: NotificationPane::new(VecDeque::new()),
             tx: tx_outbound,
             rx: rx_inbound,
@@ -102,7 +110,10 @@ impl App {
                     if let battleship_models::Payload::ServerCommand(data) = msg.payload {
                         match data {
                             ServerCommand::InitializeGame(id, settings) => {
+                                self.settings = Some(settings);
                                 // TODO: construct table
+                                self.state = Some(GameState { board: vec![vec![CellStates::Empty; settings.cols]; settings.rows] }
+                                );
                             },
                             ServerCommand::SetProfileConfirmation => {},
                             ServerCommand::SelectionMode(criteria) => {},

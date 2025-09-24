@@ -6,7 +6,6 @@ use crate::{
 };
 use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand};
 use futures_util::{SinkExt, StreamExt};
-use log::debug;
 use tokio::sync::mpsc;
 
 enum GameStatus {
