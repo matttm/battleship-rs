@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum GameStatus {
+    Uninitialized,
+    SelectionMode,
+    PlayerTurn(String), // whose turn it is
+    GameOver,
+}
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum CellStates {
     Empty,

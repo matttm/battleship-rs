@@ -1,19 +1,13 @@
 use std::error::Error;
 
 use crate::{
-    manager_message::{ConnectionDetails, ManagerMessage},
+    manager_message::{ManagerMessage},
     player::{Player, PlayerStatus},
 };
-use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand};
+use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand, GameStatus};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
-enum GameStatus {
-    Uninitialized,
-    SelectionMode,
-    PlayerTurn(String), // whose turn it is
-    GameOver,
-}
 enum NotificationType {
     Broadcast,
     DirectMessage(String),

@@ -2,7 +2,7 @@ use std::{collections::VecDeque, error::Error};
 
 use crate::{
     event::{AppEvent, Event, EventHandler},
-    widgets::notification_pane::NotificationPane,
+    widgets::{game_state::GameState, notification_pane::NotificationPane},
 };
 use battleship_models::{CellStates, ClientCommand, GameMessage, ServerCommand, Settings};
 use futures::stream::{SplitSink, SplitStream};
@@ -10,7 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
-    layout::{Constraint, Direction, Layout, Margin},
+    layout::{Constraint, Direction, Layout, Margin, Position},
     style::{Color, Style, Stylize},
     symbols::scrollbar,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
@@ -24,9 +24,6 @@ use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
 use tracing::info;
 
-pub struct GameState {
-    pub board: Vec<<Vec<CellStates>>
-}
 /// Application.
 #[derive(Debug)]
 pub struct App {
@@ -99,6 +96,14 @@ impl App {
                             _ => {}
                         },
                         Event::App(app_event) => match app_event {
+                            AppEvent::MovePlayer(dx, dy) => {
+                                if let Some(state) = self.state.as_mut() {
+                                    state.move_player(dx, dy);
+                                } else {
+                                    self.notification_pane.add_notification(String::from("Game has not begun yet"));
+                                }
+                            },
+                            AppEvent::Action => (),
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
                             AppEvent::Quit => self.quit(),
@@ -112,8 +117,13 @@ impl App {
                             ServerCommand::InitializeGame(id, settings) => {
                                 self.settings = Some(settings);
                                 // TODO: construct table
-                                self.state = Some(GameState { board: vec![vec![CellStates::Empty; settings.cols]; settings.rows] }
-                                );
+                                self.state = Some(GameState {
+                                    rows: settings.rows as u16,
+                                    cols: settings.cols as u16,
+                                    board: vec![vec![CellStates::Empty; settings.cols]; settings.rows],
+                                    state: battleship_models::GameStatus::Uninitialized,
+                                    position: Position { x: 0, y: 0 }
+                                });
                             },
                             ServerCommand::SetProfileConfirmation => {},
                             ServerCommand::SelectionMode(criteria) => {},
@@ -134,13 +144,21 @@ impl App {
             .constraints(vec![Constraint::Percentage(70), Constraint::Percentage(20)])
             .split(frame.area());
         frame.render_widget(self, layout[0]);
+        if let Some(state) = self.state.as_ref() {
+            frame.render_widget(state, layout[0]);
+        }
         frame.render_widget(&self.notification_pane, layout[1]);
     }
 
     /// Handles the key events and updates the state of [`App`].
     pub fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
+            KeyCode::Char('w') => self.events.send(AppEvent::MovePlayer(0i16, -1i16)),
+            KeyCode::Char('d') => self.events.send(AppEvent::MovePlayer(1i16, 0i16)),
+            KeyCode::Char('s') => self.events.send(AppEvent::MovePlayer(0i16, 1i16)),
+            KeyCode::Char('a') => self.events.send(AppEvent::MovePlayer(-1i16, 0i16)),
             KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+            KeyCode::Enter | KeyCode::Char('f') => self.events.send(AppEvent::Action),
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.events.send(AppEvent::Quit)
             }

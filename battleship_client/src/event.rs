@@ -35,6 +35,10 @@ pub enum AppEvent {
     Increment,
     /// Decrement the counter.
     Decrement,
+    /// Move player position by dx, dy
+    MovePlayer(i16, i16),
+    /// Invoke player action
+    Action,
     /// Quit the application.
     Quit,
 }
