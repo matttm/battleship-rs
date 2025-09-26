@@ -1,4 +1,5 @@
 # battleship-rs
+<img width="1024" height="1024" alt="Gemini_Generated_Image_tpkma4tpkma4tpkm" src="https://github.com/user-attachments/assets/7b397329-0801-407c-bb3e-1ede44f7e856" />
 
 ## Description
 
