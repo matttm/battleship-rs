@@ -9,6 +9,8 @@ pub enum GameStatus {
 }
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub enum CellStates {
+    // use this when ui shoots and is waiting to find if launch is a hit
+    Pending,
     Empty,
     Boat,
     Miss,

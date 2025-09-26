@@ -4,7 +4,9 @@ use crate::{
     event::{AppEvent, Event, EventHandler},
     widgets::{game_state::GameState, notification_pane::NotificationPane},
 };
-use battleship_models::{CellStates, ClientCommand, GameMessage, ServerCommand, Settings};
+use battleship_models::{
+    CellStates, ClientCommand, GameMessage, GameStatus, ServerCommand, Settings,
+};
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use ratatui::{
@@ -103,7 +105,13 @@ impl App {
                                     self.notification_pane.add_notification(String::from("Game has not begun yet"));
                                 }
                             },
-                            AppEvent::Action => (),
+                            AppEvent::Action => if let Some(state) = self.state.as_mut() {
+                                match &state.state {
+                                    GameStatus::SelectionMode => (),
+                                    GameStatus::PlayerTurn(player_name) if *player_name == state.player_name => (),
+                                    _ => (),
+                                    }
+                            } else {},
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
                             AppEvent::Quit => self.quit(),
@@ -118,6 +126,7 @@ impl App {
                                 self.settings = Some(settings);
                                 // TODO: construct table
                                 self.state = Some(GameState {
+                                    player_name: String::from("placeholder"),
                                     rows: settings.rows as u16,
                                     cols: settings.cols as u16,
                                     board: vec![vec![CellStates::Empty; settings.cols]; settings.rows],
