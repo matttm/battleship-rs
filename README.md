@@ -1,6 +1,5 @@
 # battleship-rs
-<img height="425" alt="image" src="https://github.com/user-attachments/assets/eeb404b5-4763-4c63-b64c-0f7045e1af25" />
-
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/55c195cb-3292-49ea-8d3b-f45c2b57cf10" />
 
 ## Description
 
