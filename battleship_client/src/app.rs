@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use battleship_models::{
-    CellStates, ClientCommand, GameMessage, GameStatus, ServerCommand, Settings,
+    CellStates, ClientCommand, Coordinates, GameMessage, GameStatus, ServerCommand, Settings,
 };
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -109,11 +109,25 @@ impl App {
                                 }
                             },
                             AppEvent::Action => if let Some(state) = self.state.as_mut() {
-                                match &state.state {
-                                    GameStatus::SelectionMode => (),
-                                    GameStatus::PlayerTurn(player_name) if *player_name == state.player_name => (),
-                                    _ => (),
+                                let message: Option<ClientCommand> = match &state.state {
+                                    GameStatus::SelectionMode => {
+                                            let Position { x, y} = state.position;
+                                            state.mark_ship_pending(y, x);
+                                            Some(ClientCommand::PlaceShip(Coordinates { x, y } ))
+                                    },
+                                    GameStatus::PlayerTurn(player_name) => {
+                                        if *player_name == state.player_name {
+                                            let Position { x, y} = state.position;
+                                            state.mark_ship_pending(y, x);
+                                            Some(ClientCommand::LaunchMissle(Coordinates { x, y } ))
+                                        } else {
+                                            self.notification_pane.add_notification(String::from("Not your turn"));
+                                            None
+                                        }
                                     }
+                                    _ => None,
+                                    };
+                                    // self.tx.send(GameMessage { id: (), sender: (), payload: () }).await;
                             } else {},
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
@@ -143,9 +157,12 @@ impl App {
                                 self.state.as_mut().expect("should have state")
                                     .place_ship(coordinates.y, coordinates.x);
                             },
-                            ServerCommand::LaunchMissleConfirmation(state, coordinates) => {},
                             ServerCommand::PlayerTurn(name) => {},
                             ServerCommand::LaunchMissle(state, coor) => {},
+                            ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
+                                self.state.as_mut().expect("should have state")
+                                    .destroy_ship(coordinates.y, coordinates.x);
+                            },
                             ServerCommand::Text(message) => {},
                             ServerCommand::GameOver => {}
                         }

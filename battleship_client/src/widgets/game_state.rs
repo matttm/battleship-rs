@@ -39,6 +39,9 @@ impl GameState {
     pub fn place_ship(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
         self.update_cell(y, x, CellStates::Boat)
     }
+    pub fn mark_ship_pending(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
+        self.update_cell(y, x, CellStates::Pending)
+    }
     pub fn update_cell(
         &mut self,
         row: usize,
