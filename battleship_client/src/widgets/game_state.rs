@@ -3,7 +3,7 @@ use std::error::Error;
 use battleship_models::{CellStates, GameStatus};
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     widgets::{Block, Paragraph, Widget},
 };
@@ -12,35 +12,40 @@ use tracing::info;
 #[derive(Debug)]
 pub struct GameState {
     pub player_name: String,
-    pub rows: u16,
-    pub cols: u16,
+    pub rows: usize,
+    pub cols: usize,
     pub board: Vec<Vec<CellStates>>,
     pub state: GameStatus,
     pub position: Position,
 }
+#[derive(Debug)]
+pub struct Position {
+    pub x: usize,
+    pub y: usize,
+}
 impl GameState {
     pub fn move_player(&mut self, dx: i16, dy: i16) {
         let Position { x, y } = self.position;
-        self.position.x = (x as i16 + dx).clamp(0, self.cols as i16 - 1) as u16;
-        self.position.y = (y as i16 + dy).clamp(0, self.rows as i16 - 1) as u16;
+        self.position.x = (x as i16 + dx).clamp(0, self.cols as i16 - 1) as usize;
+        self.position.y = (y as i16 + dy).clamp(0, self.rows as i16 - 1) as usize;
         info!(
             "Resulting position of ({}, {})",
             self.position.x, self.position.y
         );
     }
-    pub fn destroy_ship(&mut self) -> Result<(), Box<dyn Error>> {
-        self.update_cell(self.position.y, self.position.x, CellStates::Hit)
+    pub fn destroy_ship(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
+        self.update_cell(y, x, CellStates::Hit)
     }
-    pub fn place_ship(&mut self) -> Result<(), Box<dyn Error>> {
-        self.update_cell(self.position.y, self.position.x, CellStates::Boat)
+    pub fn place_ship(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
+        self.update_cell(y, x, CellStates::Boat)
     }
     pub fn update_cell(
         &mut self,
-        row: u16,
-        col: u16,
+        row: usize,
+        col: usize,
         state: CellStates,
     ) -> Result<(), Box<dyn Error>> {
-        if row > 0 && row < self.rows && col > 0 && col < self.cols {
+        if row < self.rows && col < self.cols {
             self.board[row as usize][col as usize] = state;
             Ok(())
         } else {
@@ -64,8 +69,8 @@ impl Widget for &GameState {
         let cells = rows.iter().flat_map(|&row| horizontal.split(row).to_vec());
 
         for (i, cell) in cells.enumerate() {
-            let row = i as u16 / self.cols;
-            let col = i as u16 % self.cols;
+            let row = i / self.cols;
+            let col = i % self.cols;
             let b = if row == self.position.y && col == self.position.x {
                 get_block().border_style(Style::default().fg(Color::Yellow))
             } else {

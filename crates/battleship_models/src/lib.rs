@@ -48,8 +48,10 @@ pub enum ServerCommand {
     InitializeGame(String, Settings), // string is server given uuid
     SetProfileConfirmation,
     SelectionMode(SelectionCriteria),
+    SelectionConfirmation(Coordinates),
     PlayerTurn(String), // the string is whose turn it is
     LaunchMissle(CellStates, Coordinates),
+    LaunchMissleConfirmation(CellStates, Coordinates),
     Text(String),
     GameOver,
 }

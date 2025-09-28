@@ -2,7 +2,10 @@ use std::{collections::VecDeque, error::Error};
 
 use crate::{
     event::{AppEvent, Event, EventHandler},
-    widgets::{game_state::GameState, notification_pane::NotificationPane},
+    widgets::{
+        game_state::{GameState, Position},
+        notification_pane::NotificationPane,
+    },
 };
 use battleship_models::{
     CellStates, ClientCommand, GameMessage, GameStatus, ServerCommand, Settings,
@@ -12,7 +15,7 @@ use futures_util::{SinkExt, StreamExt};
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
-    layout::{Constraint, Direction, Layout, Margin, Position},
+    layout::{Constraint, Direction, Layout, Margin},
     style::{Color, Style, Stylize},
     symbols::scrollbar,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
@@ -127,8 +130,8 @@ impl App {
                                 // TODO: construct table
                                 self.state = Some(GameState {
                                     player_name: String::from("placeholder"),
-                                    rows: settings.rows as u16,
-                                    cols: settings.cols as u16,
+                                    rows: settings.rows,
+                                    cols: settings.cols,
                                     board: vec![vec![CellStates::Empty; settings.cols]; settings.rows],
                                     state: battleship_models::GameStatus::Uninitialized,
                                     position: Position { x: 0, y: 0 }
@@ -136,6 +139,11 @@ impl App {
                             },
                             ServerCommand::SetProfileConfirmation => {},
                             ServerCommand::SelectionMode(criteria) => {},
+                            ServerCommand::SelectionConfirmation(coordinates) => {
+                                self.state.as_mut().expect("should have state")
+                                    .place_ship(coordinates.y, coordinates.x);
+                            },
+                            ServerCommand::LaunchMissleConfirmation(state, coordinates) => {},
                             ServerCommand::PlayerTurn(name) => {},
                             ServerCommand::LaunchMissle(state, coor) => {},
                             ServerCommand::Text(message) => {},
