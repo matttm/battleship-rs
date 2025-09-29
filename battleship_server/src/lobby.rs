@@ -1,10 +1,12 @@
 use std::error::Error;
 
 use crate::{
-    manager_message::{ManagerMessage},
+    manager_message::ManagerMessage,
     player::{Player, PlayerStatus},
 };
-use battleship_models::{self, Coordinates, GameMessage, SelectionCriteria, ServerCommand, GameStatus};
+use battleship_models::{
+    self, Coordinates, GameMessage, GameStatus, SelectionCriteria, ServerCommand,
+};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 
@@ -132,9 +134,9 @@ impl Lobby {
                                 *cnt -= 1;
                                 Ok((
                                     NotificationType::DirectMessage(player.id.clone()),
-                                    battleship_models::ServerCommand::Text(String::from(
-                                        "Ship placed",
-                                    )),
+                                    battleship_models::ServerCommand::SelectionConfirmation(
+                                        Coordinates { x, y },
+                                    ),
                                 ))
                             } else {
                                 Err("No ships remaining to place".into())
@@ -148,7 +150,7 @@ impl Lobby {
                         let state = player.strike_cell(y, x)?;
                         Ok((
                             NotificationType::Broadcast,
-                            battleship_models::ServerCommand::LaunchMissle(
+                            battleship_models::ServerCommand::LaunchMissleConfirmation(
                                 state,
                                 Coordinates { x, y },
                             ),
