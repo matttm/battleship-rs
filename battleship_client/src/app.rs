@@ -87,7 +87,7 @@ impl App {
     }
 
     /// Run the application's main loop.
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+    pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Box<dyn Error>> {
         while self.running {
             terminal.draw(|frame| {
                 self.render_app(frame);
@@ -109,25 +109,25 @@ impl App {
                                 }
                             },
                             AppEvent::Action => if let Some(state) = self.state.as_mut() {
-                                let message: Option<ClientCommand> = match &state.state {
+                                match &state.state {
                                     GameStatus::SelectionMode => {
                                             let Position { x, y} = state.position;
-                                            state.mark_ship_pending(y, x);
-                                            Some(ClientCommand::PlaceShip(Coordinates { x, y } ))
+                                            state.mark_ship_pending(y, x)?;
+                                            let m = ClientCommand::PlaceShip(Coordinates { x, y } );
+                                            self.send_message(m);
                                     },
                                     GameStatus::PlayerTurn(player_name) => {
                                         if *player_name == state.player_name {
                                             let Position { x, y} = state.position;
-                                            state.mark_ship_pending(y, x);
-                                            Some(ClientCommand::LaunchMissle(Coordinates { x, y } ))
+                                            state.mark_ship_pending(y, x)?;
+                                            let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
+                                            self.send_message(m);
                                         } else {
                                             self.notification_pane.add_notification(String::from("Not your turn"));
-                                            None
                                         }
                                     }
-                                    _ => None,
-                                    };
-                                    // self.tx.send(GameMessage { id: (), sender: (), payload: () }).await;
+                                    _ => (),
+                                    }
                             } else {},
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
@@ -202,6 +202,20 @@ impl App {
             _ => {}
         }
         Ok(())
+    }
+    async fn send_message(&self, m: ClientCommand) -> Result<(), Box<dyn Error>> {
+        if let Some(state) = self.state.as_ref() {
+            self.tx
+                .send(GameMessage {
+                    id: 1,
+                    sender: state.player_name.clone(),
+                    payload: battleship_models::Payload::ClientCommand(m),
+                })
+                .await;
+            Ok(())
+        } else {
+            Err("".into())
+        }
     }
 
     /// Handles the tick event of the terminal.
