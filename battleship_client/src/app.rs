@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use battleship_models::{
-    CellStates, ClientCommand, Coordinates, GameMessage, GameStatus, ServerCommand, Settings,
+    CellState, ClientCommand, Coordinates, GameMessage, GameStatus, ServerCommand, Settings,
 };
 use futures::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -114,14 +114,14 @@ impl App {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::PlaceShip(Coordinates { x, y } );
-                                            self.send_message(m);
+                                            self.send_message(m).await;
                                     },
                                     GameStatus::PlayerTurn(player_name) => {
                                         if *player_name == state.player_name {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
-                                            self.send_message(m);
+                                            self.send_message(m).await;
                                         } else {
                                             self.notification_pane.add_notification(String::from("Not your turn"));
                                         }
@@ -146,7 +146,7 @@ impl App {
                                     player_name: String::from("placeholder"),
                                     rows: settings.rows,
                                     cols: settings.cols,
-                                    board: vec![vec![CellStates::Empty; settings.cols]; settings.rows],
+                                    board: vec![vec![CellState::Empty; settings.cols]; settings.rows],
                                     state: battleship_models::GameStatus::Uninitialized,
                                     position: Position { x: 0, y: 0 }
                                 });
@@ -179,7 +179,7 @@ impl App {
             .split(frame.area());
         frame.render_widget(self, layout[0]);
         if let Some(state) = self.state.as_ref() {
-            frame.render_widget(state, layout[0]);
+            frame.render_widget(state, layout[0].inner(Margin::new(2, 2)));
         }
         frame.render_widget(&self.notification_pane, layout[1]);
     }
@@ -192,7 +192,10 @@ impl App {
             KeyCode::Char('s') => self.events.send(AppEvent::MovePlayer(0i16, 1i16)),
             KeyCode::Char('a') => self.events.send(AppEvent::MovePlayer(-1i16, 0i16)),
             KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
-            KeyCode::Enter | KeyCode::Char('f') => self.events.send(AppEvent::Action),
+            KeyCode::Enter | KeyCode::Char('f') => {
+                info!("Firing action event");
+                self.events.send(AppEvent::Action)
+            }
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
                 self.events.send(AppEvent::Quit)
             }

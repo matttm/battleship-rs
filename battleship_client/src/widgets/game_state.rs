@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use battleship_models::{CellStates, GameStatus};
+use battleship_models::{CellState, GameStatus};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -14,7 +14,7 @@ pub struct GameState {
     pub player_name: String,
     pub rows: usize,
     pub cols: usize,
-    pub board: Vec<Vec<CellStates>>,
+    pub board: Vec<Vec<CellState>>,
     pub state: GameStatus,
     pub position: Position,
 }
@@ -34,19 +34,19 @@ impl GameState {
         );
     }
     pub fn destroy_ship(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
-        self.update_cell(y, x, CellStates::Hit)
+        self.update_cell(y, x, CellState::Hit)
     }
     pub fn place_ship(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
-        self.update_cell(y, x, CellStates::Boat)
+        self.update_cell(y, x, CellState::Boat)
     }
     pub fn mark_ship_pending(&mut self, y: usize, x: usize) -> Result<(), Box<dyn Error>> {
-        self.update_cell(y, x, CellStates::Pending)
+        self.update_cell(y, x, CellState::Pending)
     }
     pub fn update_cell(
         &mut self,
         row: usize,
         col: usize,
-        state: CellStates,
+        state: CellState,
     ) -> Result<(), Box<dyn Error>> {
         if row < self.rows && col < self.cols {
             self.board[row as usize][col as usize] = state;
@@ -67,19 +67,31 @@ impl Widget for &GameState {
         let row_constraints = (0..self.rows).map(|_| Constraint::Ratio(1, self.rows as u32));
         let horizontal = Layout::horizontal(col_constraints).spacing(1);
         let vertical = Layout::vertical(row_constraints).spacing(1);
-
         let rows = vertical.split(area);
         let cells = rows.iter().flat_map(|&row| horizontal.split(row).to_vec());
-
         for (i, cell) in cells.enumerate() {
             let row = i / self.cols;
             let col = i % self.cols;
-            let b = if row == self.position.y && col == self.position.x {
-                get_block().border_style(Style::default().fg(Color::Yellow))
-            } else {
-                get_block().border_style(Style::default().fg(Color::Blue))
+            let cell_state = self.board[row][col];
+            // color according to state
+            let color = match &cell_state {
+                CellState::Pending => Color::White,
+                CellState::Empty => Color::LightBlue,
+                CellState::Boat => Color::Gray,
+                CellState::Miss => Color::Black,
+                CellState::Hit => Color::Red,
             };
-            let c = Paragraph::new(format!("Area {:02}", i + 1)).block(b);
+            // mark border if positioned on cell
+            let b = if row == self.position.y && col == self.position.x {
+                get_block()
+                    .style(Style::default().fg(color))
+                    .border_style(Style::default().fg(Color::Yellow))
+            } else {
+                get_block()
+                    .style(Style::default().fg(color))
+                    .border_style(Style::default().fg(Color::Blue))
+            };
+            let c = Paragraph::new("").block(b);
             c.render(cell, buf);
         }
     }

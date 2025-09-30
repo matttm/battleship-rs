@@ -8,7 +8,7 @@ pub enum GameStatus {
     GameOver,
 }
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub enum CellStates {
+pub enum CellState {
     // use this when ui shoots and is waiting to find if launch is a hit
     Pending,
     Empty,
@@ -50,8 +50,8 @@ pub enum ServerCommand {
     SelectionMode(SelectionCriteria),
     SelectionConfirmation(Coordinates),
     PlayerTurn(String), // the string is whose turn it is
-    LaunchMissle(CellStates, Coordinates),
-    LaunchMissleConfirmation(CellStates, Coordinates),
+    LaunchMissle(CellState, Coordinates),
+    LaunchMissleConfirmation(CellState, Coordinates),
     Text(String),
     GameOver,
 }

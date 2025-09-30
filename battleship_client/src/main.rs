@@ -1,4 +1,5 @@
 use std::env;
+use std::error::Error;
 use std::path::PathBuf;
 
 use color_eyre::eyre::{Context, Result};
@@ -99,7 +100,7 @@ macro_rules! trace_dbg {
 
 /// A WebSocket echo server
 #[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+async fn main() -> Result<(), Box<dyn Error>> {
     color_eyre::install()?;
 
     // Initialize logging and store the `WorkerGuard` in a variable.
@@ -107,10 +108,12 @@ async fn main() -> color_eyre::Result<()> {
     let _guard = initialize_logging()?;
 
     info!("Initializing BATTLESHIP");
-    info!("Connecting to server");
-    info!("Connection established");
     let terminal = ratatui::init();
-    let result = App::new().await.expect("not to error").run(terminal).await;
+    let result = App::new()
+        .await
+        .expect("should instantiate App")
+        .run(terminal)
+        .await;
     ratatui::restore();
     result
 }

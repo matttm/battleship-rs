@@ -1,4 +1,4 @@
-use battleship_models::{self, CellStates, GameMessage};
+use battleship_models::{self, CellState, GameMessage};
 use tokio::sync::mpsc;
 
 pub enum PlayerStatus {
@@ -14,7 +14,7 @@ pub struct Player {
     pub status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
-    board: Box<[Box<[CellStates]>]>,
+    board: Box<[Box<[CellState]>]>,
     pub ships_alive: usize,
 }
 impl Player {
@@ -41,8 +41,8 @@ impl Player {
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         match current {
-            CellStates::Empty => self.set_cell(row, col, CellStates::Boat),
-            CellStates::Boat => Err("There is already a ship at this position.".into()),
+            CellState::Empty => self.set_cell(row, col, CellState::Boat),
+            CellState::Boat => Err("There is already a ship at this position.".into()),
             _ => Err("Unknown error".into()),
         }
     }
@@ -50,15 +50,15 @@ impl Player {
         &mut self,
         row: usize,
         col: usize,
-    ) -> Result<CellStates, Box<dyn std::error::Error>> {
+    ) -> Result<CellState, Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         let state;
         match current {
-            CellStates::Empty => {
-                state = CellStates::Miss;
+            CellState::Empty => {
+                state = CellState::Miss;
             }
-            CellStates::Boat => {
-                state = CellStates::Hit;
+            CellState::Boat => {
+                state = CellState::Hit;
             }
             _ => return Err("".into()),
         };
@@ -69,15 +69,15 @@ impl Player {
         &mut self,
         row: usize,
         col: usize,
-        state: CellStates,
+        state: CellState,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         self.board[row][col] = state.clone();
         Ok(true)
     }
-    fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellStates]>]> {
+    fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellState]>]> {
         let mut vec_rows = Vec::with_capacity(rows);
         for _ in 0..rows {
-            vec_rows.push(vec![CellStates::Empty; cols].into_boxed_slice());
+            vec_rows.push(vec![CellState::Empty; cols].into_boxed_slice());
         }
         vec_rows.into_boxed_slice()
     }

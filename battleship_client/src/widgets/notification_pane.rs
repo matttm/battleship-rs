@@ -11,6 +11,7 @@ use ratatui::{
         StatefulWidget, Widget,
     },
 };
+use tracing::info;
 
 #[derive(Debug)]
 pub struct NotificationPane {
@@ -18,12 +19,21 @@ pub struct NotificationPane {
 }
 impl NotificationPane {
     pub fn new(notifications: VecDeque<String>) -> Self {
-        Self { notifications }
+        let mut s = Self { notifications };
+        s.populate_test();
+        s
+    }
+    pub fn populate_test(&mut self) {
+        let items = &mut self.notifications;
+        for _ in 0..100 {
+            items.push_front("TEST".to_string());
+        }
     }
     //     fn build_notification(text: String) -> Paragraph {
     //         Paragraph::new(text).block(Block::new())
     //     }
     pub fn add_notification(&mut self, text: String) {
+        info!("Notification: {}", text);
         self.notifications.push_front(text);
     }
 }
@@ -32,10 +42,7 @@ impl Widget for &NotificationPane {
         // Calculate the area for the scrollable list
         let mut state = ScrollbarState::default();
         // Use the items vector as the source of notifications
-        let mut items = vec!["bees".to_string(); self.notifications.len()];
-        for _ in 0..100 {
-            items.push("TEST".to_string());
-        }
+        let items = &self.notifications;
         let mut y_offset = area.y;
         // Calculate the height of each notification block (border + padding + text + padding + border)
         let block_height = 1 + 0 + 1 + 0 + 1; // border + padding + text + padding + border
