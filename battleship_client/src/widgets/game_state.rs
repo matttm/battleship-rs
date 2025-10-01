@@ -15,7 +15,7 @@ pub struct GameState {
     pub rows: usize,
     pub cols: usize,
     pub board: Vec<Vec<CellState>>,
-    pub state: GameStatus,
+    pub status: GameStatus,
     pub position: Position,
 }
 #[derive(Debug)]
@@ -84,11 +84,11 @@ impl Widget for &GameState {
             // mark border if positioned on cell
             let b = if row == self.position.y && col == self.position.x {
                 get_block()
-                    .style(Style::default().fg(color))
+                    .style(Style::default().fg(color).bg(color))
                     .border_style(Style::default().fg(Color::Yellow))
             } else {
                 get_block()
-                    .style(Style::default().fg(color))
+                    .style(Style::default().fg(color).bg(color))
                     .border_style(Style::default().fg(Color::Blue))
             };
             let c = Paragraph::new("").block(b);

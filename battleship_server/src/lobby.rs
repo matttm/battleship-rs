@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::{
-    manager_message::ManagerMessage,
+    manager_message::{ConnectionDetails, ManagerMessage},
     player::{Player, PlayerStatus},
 };
 use battleship_models::{
@@ -423,11 +423,11 @@ async fn test_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_b);
     assert!(matches!(
         msg_a.payload,
-        Payload::ServerCommand(ServerCommand::Text(_))
+        Payload::ServerCommand(ServerCommand::SelectionConfirmation(_))
     ));
     assert!(matches!(
         msg_b.payload,
-        Payload::ServerCommand(ServerCommand::Text(_))
+        Payload::ServerCommand(ServerCommand::SelectionConfirmation(_))
     ));
     let msg_a = rx_a.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_a);
@@ -463,11 +463,24 @@ async fn test_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_b);
     assert!(matches!(
         msg_a.payload,
-        Payload::ServerCommand(ServerCommand::LaunchMissle(_, _))
+        Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(_, _))
     ));
     assert!(matches!(
         msg_b.payload,
-        Payload::ServerCommand(ServerCommand::LaunchMissle(_, _))
+        Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(_, _))
+    ));
+    // Receive responses for missile launch
+    let msg_a = rx_a.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_a);
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("msg_a: {:#?}", &msg_b);
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::GameOver)
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::GameOver)
     ));
     tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
     handle.await.unwrap();

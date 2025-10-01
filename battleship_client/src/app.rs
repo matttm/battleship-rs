@@ -39,7 +39,7 @@ pub struct App {
     /// Event handler.
     pub events: EventHandler,
     pub settings: Option<Settings>,
-    pub state: Option<GameState>,
+    pub state_option: Option<GameState>,
     pub notification_pane: NotificationPane,
     tx: Sender<GameMessage>,
     rx: Receiver<GameMessage>,
@@ -78,7 +78,7 @@ impl App {
             counter: 0,
             events: EventHandler::new(),
             settings: None,
-            state: None,
+            state_option: None,
             notification_pane: NotificationPane::new(VecDeque::new()),
             tx: tx_outbound,
             rx: rx_inbound,
@@ -102,14 +102,14 @@ impl App {
                         },
                         Event::App(app_event) => match app_event {
                             AppEvent::MovePlayer(dx, dy) => {
-                                if let Some(state) = self.state.as_mut() {
+                                if let Some(state) = self.state_option.as_mut() {
                                     state.move_player(dx, dy);
                                 } else {
                                     self.notification_pane.add_notification(String::from("Game has not begun yet"));
                                 }
                             },
-                            AppEvent::Action => if let Some(state) = self.state.as_mut() {
-                                match &state.state {
+                            AppEvent::Action => if let Some(state) = self.state_option.as_mut() {
+                                match &state.status {
                                     GameStatus::SelectionMode => {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
@@ -126,7 +126,10 @@ impl App {
                                             self.notification_pane.add_notification(String::from("Not your turn"));
                                         }
                                     }
-                                    _ => (),
+                                    _ => {
+                                        info!("Action cannot be performed during state: {:?}", state);
+                                        self.notification_pane.add_notification(String::from("Action cannot be performed during current state"));
+                                    },
                                     }
                             } else {},
                             AppEvent::Increment => self.increment_counter(),
@@ -135,35 +138,41 @@ impl App {
                         },
                     }
                 },
-                    Some(msg) = self.rx.recv() => {
+                Some(msg) = self.rx.recv() => {
                     self.notification_pane.add_notification(String::from("Got it"));
                     if let battleship_models::Payload::ServerCommand(data) = msg.payload {
                         match data {
                             ServerCommand::InitializeGame(id, settings) => {
                                 self.settings = Some(settings);
                                 // TODO: construct table
-                                self.state = Some(GameState {
+                                self.state_option = Some(GameState {
                                     player_name: String::from("placeholder"),
                                     rows: settings.rows,
                                     cols: settings.cols,
                                     board: vec![vec![CellState::Empty; settings.cols]; settings.rows],
-                                    state: battleship_models::GameStatus::Uninitialized,
+                                    status: battleship_models::GameStatus::Uninitialized,
                                     position: Position { x: 0, y: 0 }
                                 });
                             },
                             ServerCommand::SetProfileConfirmation => {},
-                            ServerCommand::SelectionMode(criteria) => {},
+                            ServerCommand::SelectionMode(criteria) => {
+                                self.state_option.as_mut().expect("should have state").status = GameStatus::SelectionMode;
+                            },
                             ServerCommand::SelectionConfirmation(coordinates) => {
-                                self.state.as_mut().expect("should have state")
+                                self.state_option.as_mut().expect("should have state")
                                     .place_ship(coordinates.y, coordinates.x);
                             },
-                            ServerCommand::PlayerTurn(name) => {},
+                            ServerCommand::PlayerTurn(name) => {
+                                self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(name.clone());
+                            },
                             ServerCommand::LaunchMissle(state, coor) => {},
                             ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
-                                self.state.as_mut().expect("should have state")
+                                self.state_option.as_mut().expect("should have state")
                                     .destroy_ship(coordinates.y, coordinates.x);
                             },
-                            ServerCommand::Text(message) => {},
+                            ServerCommand::Text(message) => {
+                                self.notification_pane.add_notification(message);
+                            },
                             ServerCommand::GameOver => {}
                         }
                     } else {}
@@ -177,8 +186,8 @@ impl App {
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(70), Constraint::Percentage(20)])
             .split(frame.area());
-        frame.render_widget(self, layout[0]);
-        if let Some(state) = self.state.as_ref() {
+        frame.render_widget(self, layout[0].inner(Margin::new(2, 2)));
+        if let Some(state) = self.state_option.as_ref() {
             frame.render_widget(state, layout[0].inner(Margin::new(2, 2)));
         }
         frame.render_widget(&self.notification_pane, layout[1]);
@@ -207,7 +216,7 @@ impl App {
         Ok(())
     }
     async fn send_message(&self, m: ClientCommand) -> Result<(), Box<dyn Error>> {
-        if let Some(state) = self.state.as_ref() {
+        if let Some(state) = self.state_option.as_ref() {
             self.tx
                 .send(GameMessage {
                     id: 1,
