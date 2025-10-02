@@ -1,6 +1,7 @@
 use battleship_models::{self, CellState, GameMessage};
 use tokio::sync::mpsc;
 
+#[derive(Debug)]
 pub enum PlayerStatus {
     Uninitialized,
     Initialized,

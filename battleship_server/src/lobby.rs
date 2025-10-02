@@ -8,6 +8,7 @@ use battleship_models::{
     self, Coordinates, GameMessage, GameStatus, SelectionCriteria, ServerCommand,
 };
 use futures_util::{SinkExt, StreamExt};
+use log::info;
 use tokio::sync::mpsc;
 
 enum NotificationType {
@@ -69,7 +70,7 @@ impl Lobby {
         while self.is_running {
             let (notification_type, server_command) = tokio::select! {
                 Some(msg) = self.rx_from_manager.recv() => {
-                    dbg!("Received manager msg {:#?}", &msg);
+                    info!("Received manager msg");
                     match msg {
                         ManagerMessage::NewConnection(details) => {
                             let settings = self.settings;
@@ -92,11 +93,11 @@ impl Lobby {
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
-                        dbg!("Received player msg {:#?}", &msg);
+                        info!("Received player msg {:?}", &msg.payload);
                         self.handle_player_message(msg).await?
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
-                        dbg!("Received player msg {:#?}", &msg);
+                        info!("Received player msg {:?}", &msg.payload);
                         self.handle_player_message(msg).await?
                 },
             };
@@ -104,6 +105,8 @@ impl Lobby {
             let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
             if let Some(state) = next_state {
                 self.broadcast(state).await?;
+            } else {
+                info!("Progressing lobby produced no state emission");
             }
         }
         Ok(())
@@ -190,6 +193,7 @@ impl Lobby {
                 if let (&PlayerStatus::Selecting(0), &PlayerStatus::Selecting(0)) =
                     (&a.status, &b.status)
                 {
+                    // tranditioning from selections to launching
                     self.status = GameStatus::PlayerTurn(a_name.clone());
                     a.status = PlayerStatus::Deciding(true); // true means missle loadec
                     Some(ServerCommand::PlayerTurn(a_name))
@@ -205,11 +209,20 @@ impl Lobby {
                     self.status = GameStatus::GameOver;
                     Some(ServerCommand::GameOver)
                 } else if let PlayerStatus::Deciding(false) = bomber.status {
-                    // false indicates missle fired
+                    // NOTE: false indicates missle fired
                     self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
+                    // bomber done deciding
+                    bomber.status = PlayerStatus::Deciding(false);
+                    // bombed is deciding
                     bombed_player.status = PlayerStatus::Deciding(true);
+                    self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
                     Some(ServerCommand::PlayerTurn(bombed_player.name.clone()))
                 } else {
+                    // if this case is encountered, deciding must be true
+                    info!(
+                        "PlayerTurn else encountered (bomber, bombed) : ({:?}, {:?})",
+                        bomber.status, bombed_player.status
+                    );
                     None
                 }
             }
@@ -263,6 +276,7 @@ impl Lobby {
                 return self.direct_message(player, data).await;
             }
             NotificationType::NoMessage => {
+                info!("Message produced no response");
                 return Ok(());
             }
         };
@@ -323,7 +337,7 @@ impl Lobby {
 }
 
 #[tokio::test]
-async fn test_lobby_game_lifecycle() {
+async fn test_simple_lobby_game_lifecycle() {
     use crate::lobby::Lobby;
     use battleship_models::*;
     use tokio::sync::mpsc;
