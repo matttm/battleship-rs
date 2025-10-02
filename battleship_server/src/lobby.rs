@@ -104,6 +104,7 @@ impl Lobby {
             self.send_message(notification_type, server_command).await?;
             let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
             if let Some(state) = next_state {
+                info!("Progressing lobby produced state {:?}", state);
                 self.broadcast(state).await?;
             } else {
                 info!("Progressing lobby produced no state emission");
