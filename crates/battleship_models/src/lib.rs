@@ -7,7 +7,7 @@ pub enum GameStatus {
     PlayerTurn(String), // whose turn it is
     GameOver,
 }
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub enum CellState {
     // use this when ui shoots and is waiting to find if launch is a hit
     Pending,
