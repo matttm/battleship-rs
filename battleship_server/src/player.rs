@@ -15,7 +15,7 @@ pub struct Player {
     pub status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
-    board: Box<[Box<[CellState]>]>,
+    pub board: Box<[Box<[CellState]>]>,
     pub ships_alive: usize,
 }
 impl Player {

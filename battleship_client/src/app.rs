@@ -158,9 +158,14 @@ impl App {
                             ServerCommand::SelectionMode(criteria) => {
                                 self.state_option.as_mut().expect("should have state").status = GameStatus::SelectionMode;
                             },
-                            ServerCommand::SelectionConfirmation(coordinates) => {
+                            ServerCommand::PlaceBoatConfirmation(coordinates) => {
                                 self.state_option.as_mut().expect("should have state")
                                     .place_ship(coordinates.y, coordinates.x);
+                            },
+                            ServerCommand::PlaceBoatError(state, coordinates, message) => {
+                                self.state_option.as_mut().expect("should have state")
+                                    .update_cell(coordinates.y, coordinates.x, state);
+                                self.notification_pane.add_notification(message);
                             },
                             ServerCommand::PlayerTurn(name) => {
                                 self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(name.clone());
