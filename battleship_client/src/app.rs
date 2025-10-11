@@ -117,7 +117,7 @@ impl App {
                                             self.send_message(m).await;
                                     },
                                     GameStatus::PlayerTurn(player_name) => {
-                                        if *player_name == state.player_name {
+                                        if *player_name == state.id {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
@@ -146,6 +146,7 @@ impl App {
                                 self.settings = Some(settings);
                                 // TODO: construct table
                                 self.state_option = Some(GameState {
+                                    id: id,
                                     player_name: String::from("placeholder"),
                                     rows: settings.rows,
                                     cols: settings.cols,
@@ -167,8 +168,8 @@ impl App {
                                     .update_cell(coordinates.y, coordinates.x, state);
                                 self.notification_pane.add_notification(message);
                             },
-                            ServerCommand::PlayerTurn(name) => {
-                                self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(name.clone());
+                            ServerCommand::PlayerTurn(id) => {
+                                self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(id);
                             },
                             ServerCommand::LaunchMissle(state, coor) => {},
                             ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
@@ -225,7 +226,7 @@ impl App {
             self.tx
                 .send(GameMessage {
                     id: 1,
-                    sender: state.player_name.clone(),
+                    sender: state.id.clone(),
                     payload: battleship_models::Payload::ClientCommand(m),
                 })
                 .await;

@@ -55,7 +55,6 @@ impl Lobby {
         };
 
         *player_slot = Some(Player::new(tx, rx, self.settings.rows, self.settings.cols));
-
         player_slot
     }
     pub fn is_lobby_full(&self) -> bool {
@@ -230,17 +229,17 @@ impl Lobby {
                     (&a.status, &b.status)
                 {
                     // tranditioning from selections to launching
-                    self.status = GameStatus::PlayerTurn(a_name.clone());
+                    self.status = GameStatus::PlayerTurn(a.id.clone());
                     a.status = PlayerStatus::Deciding(true); // true means missle loadec
-                    Some(ServerCommand::PlayerTurn(a_name))
+                    Some(ServerCommand::PlayerTurn(a.id.clone()))
                 } else {
                     None
                 }
             }
-            GameStatus::PlayerTurn(name) => {
+            GameStatus::PlayerTurn(id) => {
                 // TODO: add a check to see if player launched or not
                 // getting player who wasn launched at
-                let (bomber, bombed_player) = if a_name == *name { (a, b) } else { (b, a) };
+                let (bomber, bombed_player) = if a.id.clone() == *id { (a, b) } else { (b, a) };
                 if bombed_player.ships_alive == 0 {
                     self.status = GameStatus::GameOver;
                     Some(ServerCommand::GameOver)
@@ -251,8 +250,8 @@ impl Lobby {
                     bomber.status = PlayerStatus::Deciding(false);
                     // bombed is deciding
                     bombed_player.status = PlayerStatus::Deciding(true);
-                    self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
-                    Some(ServerCommand::PlayerTurn(bombed_player.name.clone()))
+                    self.status = GameStatus::PlayerTurn(bombed_player.id.clone());
+                    Some(ServerCommand::PlayerTurn(bombed_player.id.clone()))
                 } else {
                     // if this case is encountered, deciding must be true
                     info!(

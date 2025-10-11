@@ -11,6 +11,7 @@ use tracing::info;
 
 #[derive(Debug)]
 pub struct GameState {
+    pub id: String,
     pub player_name: String,
     pub rows: usize,
     pub cols: usize,
@@ -24,6 +25,15 @@ pub struct Position {
     pub y: usize,
 }
 impl GameState {
+    pub fn clear_board(&mut self) {
+        // Iterate over rows with mutable references
+        for row in self.board.iter_mut() {
+            // Iterate over elements within each row with mutable references
+            for cell in row.iter_mut() {
+                *cell = CellState::Empty;
+            }
+        }
+    }
     pub fn move_player(&mut self, dx: i16, dy: i16) {
         let Position { x, y } = self.position;
         self.position.x = (x as i16 + dx).clamp(0, self.cols as i16 - 1) as usize;
