@@ -116,8 +116,8 @@ impl App {
                                             let m = ClientCommand::PlaceShip(Coordinates { x, y } );
                                             self.send_message(m).await;
                                     },
-                                    GameStatus::PlayerTurn(player_name) => {
-                                        if *player_name == state.id {
+                                    GameStatus::PlayerTurn(player_id) => {
+                                        if *player_id == state.id {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
@@ -163,16 +163,21 @@ impl App {
                                 self.state_option.as_mut().expect("should have state")
                                     .place_ship(coordinates.y, coordinates.x);
                             },
-                            ServerCommand::PlaceBoatError(state, coordinates, message) => {
+                            ServerCommand::PlaceBoatError(cell_state, coordinates, message) => {
                                 self.state_option.as_mut().expect("should have state")
-                                    .update_cell(coordinates.y, coordinates.x, state);
+                                    .update_cell(coordinates.y, coordinates.x, cell_state);
                                 self.notification_pane.add_notification(message);
                             },
                             ServerCommand::PlayerTurn(id) => {
-                                self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(id);
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if matches!(&state.status, GameStatus::SelectionMode ) {
+                                        state.clear_board();
+                                }
+                                state.status = GameStatus::PlayerTurn(id);
                             },
                             ServerCommand::LaunchMissle(state, coor) => {},
                             ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
+                                // TODO: add a check the id
                                 self.state_option.as_mut().expect("should have state")
                                     .destroy_ship(coordinates.y, coordinates.x);
                             },
