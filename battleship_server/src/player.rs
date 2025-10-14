@@ -35,11 +35,7 @@ impl Player {
             ships_alive: 0,
         }
     }
-    pub fn place_ship(
-        &mut self,
-        row: usize,
-        col: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    pub fn place_ship(&mut self, row: usize, col: usize) -> Result<(), Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         match current {
             CellState::Empty => self.set_cell(row, col, CellState::Boat),
@@ -71,9 +67,9 @@ impl Player {
         row: usize,
         col: usize,
         state: CellState,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.board[row][col] = state.clone();
-        Ok(true)
+        Ok(())
     }
     fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellState]>]> {
         let mut vec_rows = Vec::with_capacity(rows);

@@ -126,7 +126,17 @@ impl Lobby {
                 match command {
                     battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                         let player = self.get_mut_player(player_id);
-                        let is_placed = player.place_ship(y, x)?;
+                        // TODO: MOVE IN THE IF-statement
+                        if let Err(msg) = player.place_ship(y, x) {
+                            return Ok((
+                                NotificationType::DirectMessage(player.id.clone()),
+                                battleship_models::ServerCommand::PlaceBoatError(
+                                    player.board[y][x],
+                                    Coordinates { x, y },
+                                    msg.to_string(),
+                                ),
+                            ));
+                        }
                         // Use if let to concisely check the player's status.
                         if let PlayerStatus::Selecting(cnt) = &mut player.status {
                             if *cnt == 0 {
@@ -139,26 +149,15 @@ impl Lobby {
                                     ),
                                 ));
                             }
-                            if is_placed {
-                                // Decrement the count directly and place the ship.
-                                *cnt -= 1;
-                                player.ships_alive += 1; // Increment ships alive when placing
-                                Ok((
-                                    NotificationType::DirectMessage(player.id.clone()),
-                                    battleship_models::ServerCommand::PlaceBoatConfirmation(
-                                        Coordinates { x, y },
-                                    ),
-                                ))
-                            } else {
-                                Ok((
-                                    NotificationType::DirectMessage(player.id.clone()),
-                                    battleship_models::ServerCommand::PlaceBoatError(
-                                        player.board[y][x],
-                                        Coordinates { x, y },
-                                        String::from("Error while placing ship"),
-                                    ),
-                                ))
-                            }
+                            // Decrement the count directly and place the ship.
+                            *cnt -= 1;
+                            player.ships_alive += 1; // Increment ships alive when placing
+                            Ok((
+                                NotificationType::DirectMessage(player.id.clone()),
+                                battleship_models::ServerCommand::PlaceBoatConfirmation(
+                                    Coordinates { x, y },
+                                ),
+                            ))
                         } else {
                             Ok((
                                 NotificationType::DirectMessage(player.id.clone()),
