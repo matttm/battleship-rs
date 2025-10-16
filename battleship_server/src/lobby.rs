@@ -127,6 +127,7 @@ impl Lobby {
                     battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                         let player = self.get_mut_player(player_id);
                         // TODO: MOVE IN THE IF-statement
+                        // Use if let to concisely check the player's status.
                         if let Err(msg) = player.place_ship(y, x) {
                             return Ok((
                                 NotificationType::DirectMessage(player.id.clone()),
@@ -137,37 +138,13 @@ impl Lobby {
                                 ),
                             ));
                         }
-                        // Use if let to concisely check the player's status.
-                        if let PlayerStatus::Selecting(cnt) = &mut player.status {
-                            if *cnt == 0 {
-                                return Ok((
-                                    NotificationType::DirectMessage(player.id.clone()),
-                                    battleship_models::ServerCommand::PlaceBoatError(
-                                        player.board[y][x],
-                                        Coordinates { x, y },
-                                        String::from("No boats left to place"),
-                                    ),
-                                ));
-                            }
-                            // Decrement the count directly and place the ship.
-                            *cnt -= 1;
-                            player.ships_alive += 1; // Increment ships alive when placing
-                            Ok((
-                                NotificationType::DirectMessage(player.id.clone()),
-                                battleship_models::ServerCommand::PlaceBoatConfirmation(
-                                    Coordinates { x, y },
-                                ),
-                            ))
-                        } else {
-                            Ok((
-                                NotificationType::DirectMessage(player.id.clone()),
-                                battleship_models::ServerCommand::PlaceBoatError(
-                                    player.board[y][x],
-                                    Coordinates { x, y },
-                                    String::from("Not in selection mode"),
-                                ),
-                            ))
-                        }
+                        Ok((
+                            NotificationType::DirectMessage(player.id.clone()),
+                            battleship_models::ServerCommand::PlaceBoatConfirmation(Coordinates {
+                                x,
+                                y,
+                            }),
+                        ))
                     }
                     battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
                         let player_id_clone = player_id.clone();

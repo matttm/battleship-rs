@@ -37,8 +37,22 @@ impl Player {
     }
     pub fn place_ship(&mut self, row: usize, col: usize) -> Result<(), Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
+        if !matches!(self.status, PlayerStatus::Selecting(_)) {
+            return Err("Not in selection mode".into());
+        }
+        if let PlayerStatus::Selecting(ref mut cnt) = self.status {
+            if *cnt == 0 {
+                return Err("No boats left to place".into());
+            }
+            *cnt -= 1;
+        }
         match current {
-            CellState::Empty => self.set_cell(row, col, CellState::Boat),
+            CellState::Empty => {
+                self.set_cell(row, col, CellState::Boat)?;
+                // Decrement the count directly and place the ship.
+                self.ships_alive += 1; // Increment ships alive when placing
+                Ok(())
+            }
             CellState::Boat => Err("There is already a ship at this position.".into()),
             _ => Err("Unknown error".into()),
         }
