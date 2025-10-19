@@ -112,7 +112,7 @@ impl App {
                                 match &state.status {
                                     GameStatus::SelectionMode => {
                                             let Position { x, y} = state.position;
-                                            state.mark_ship_pending(y, x)?;
+                                            // state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::PlaceShip(Coordinates { x, y } );
                                             self.send_message(m).await;
                                     },
@@ -131,7 +131,9 @@ impl App {
                                         self.notification_pane.add_notification(String::from("Action cannot be performed during current state"));
                                     },
                                     }
-                            } else {},
+                            } else {
+                                        self.notification_pane.add_notification(String::from("Game not initialized yet"));
+                            },
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
                             AppEvent::Quit => self.quit(),
@@ -139,12 +141,10 @@ impl App {
                     }
                 },
                 Some(msg) = self.rx.recv() => {
-                    self.notification_pane.add_notification(String::from("Got it"));
                     if let battleship_models::Payload::ServerCommand(data) = msg.payload {
                         match data {
                             ServerCommand::InitializeGame(id, settings) => {
                                 self.settings = Some(settings);
-                                // TODO: construct table
                                 self.state_option = Some(GameState {
                                     id: id,
                                     player_name: String::from("placeholder"),
@@ -176,10 +176,15 @@ impl App {
                                 state.status = GameStatus::PlayerTurn(id);
                             },
                             ServerCommand::LaunchMissle(state, coor) => {},
-                            ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
+                            ServerCommand::LaunchMissleConfirmation(cell_state, coordinates) => {
                                 // TODO: add a check the id
-                                self.state_option.as_mut().expect("should have state")
-                                    .destroy_ship(coordinates.y, coordinates.x);
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if let GameStatus::PlayerTurn(id) = &state.status && *id != state.id {
+                                    state.update_cell(coordinates.y, coordinates.x, cell_state);
+                                    self.notification_pane.add_notification(String::from("Man down"));
+                                } else {
+                                    self.notification_pane.add_notification(String::from("Player hit"));
+                                }
                             },
                             ServerCommand::Text(message) => {
                                 self.notification_pane.add_notification(message);
