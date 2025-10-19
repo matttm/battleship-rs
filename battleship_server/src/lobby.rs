@@ -55,7 +55,6 @@ impl Lobby {
         };
 
         *player_slot = Some(Player::new(tx, rx, self.settings.rows, self.settings.cols));
-
         player_slot
     }
     pub fn is_lobby_full(&self) -> bool {
@@ -93,15 +92,18 @@ impl Lobby {
                     }
                 },
                 Some(msg) = Self::try_recv(&mut self.player_a), if self.player_a.is_some() => {
-                        info!("Received player msg {:?}", &msg.payload);
+                        info!("Received player_a msg {:?}", &msg.payload);
                         self.handle_player_message(msg).await?
                 },
                 Some(msg) = Self::try_recv(&mut self.player_b), if self.player_b.is_some() => {
-                        info!("Received player msg {:?}", &msg.payload);
+                        info!("Received player_b msg {:?}", &msg.payload);
                         self.handle_player_message(msg).await?
                 },
             };
-            self.send_message(notification_type, server_command).await?;
+            info!("Handling server command {:?}", server_command);
+            if let Err(msg) = self.send_message(notification_type, server_command).await {
+                log::error!("{}", msg);
+            }
             let next_state: Option<ServerCommand> = self.progress_lobby_state().await;
             if let Some(state) = next_state {
                 info!("Progressing lobby produced state {:?}", state);
@@ -117,7 +119,6 @@ impl Lobby {
         msg: GameMessage,
     ) -> Result<(NotificationType, ServerCommand), Box<dyn Error>> {
         let player_id = msg.sender;
-
         // Use a match statement to handle different payload types.
         match msg.payload {
             battleship_models::Payload::ClientCommand(command) => {
@@ -125,33 +126,42 @@ impl Lobby {
                 match command {
                     battleship_models::ClientCommand::PlaceShip(Coordinates { x, y }) => {
                         let player = self.get_mut_player(player_id);
-
-                        let is_placed = player.place_ship(y, x)?;
+                        // TODO: MOVE IN THE IF-statement
                         // Use if let to concisely check the player's status.
-                        if let PlayerStatus::Selecting(cnt) = &mut player.status {
-                            if *cnt == 0 {
-                                return Err("No ships remaining to place".into());
-                            }
-
-                            if is_placed {
-                                // Decrement the count directly and place the ship.
-                                *cnt -= 1;
-                                Ok((
-                                    NotificationType::DirectMessage(player.id.clone()),
-                                    battleship_models::ServerCommand::SelectionConfirmation(
-                                        Coordinates { x, y },
-                                    ),
-                                ))
-                            } else {
-                                Err("No ships remaining to place".into())
-                            }
-                        } else {
-                            Err("Player not in selection mode".into())
+                        if let Err(msg) = player.place_ship(y, x) {
+                            return Ok((
+                                NotificationType::DirectMessage(player.id.clone()),
+                                battleship_models::ServerCommand::PlaceBoatError(
+                                    player.board[y][x],
+                                    Coordinates { x, y },
+                                    msg.to_string(),
+                                ),
+                            ));
                         }
+                        Ok((
+                            NotificationType::DirectMessage(player.id.clone()),
+                            battleship_models::ServerCommand::PlaceBoatConfirmation(Coordinates {
+                                x,
+                                y,
+                            }),
+                        ))
                     }
                     battleship_models::ClientCommand::LaunchMissle(Coordinates { x, y }) => {
-                        let player = self.get_opposite_mut_player(player_id);
-                        let state = player.strike_cell(y, x)?;
+                        let player_id_clone = player_id.clone();
+                        let target_player = self.get_opposite_mut_player(player_id);
+                        let state = target_player.strike_cell(y, x)?;
+
+                        // Decrement ships_alive if it's a hit
+                        if matches!(state, battleship_models::CellState::Hit) {
+                            target_player.ships_alive = target_player.ships_alive.saturating_sub(1);
+                        }
+
+                        // Update the shooter's status to indicate they've fired
+                        let shooter = self.get_mut_player(player_id_clone);
+                        if let PlayerStatus::Deciding(_) = shooter.status {
+                            shooter.status = PlayerStatus::Deciding(false);
+                        }
+
                         Ok((
                             NotificationType::Broadcast,
                             battleship_models::ServerCommand::LaunchMissleConfirmation(
@@ -182,8 +192,8 @@ impl Lobby {
                 (Some(a), Some(b)) => {
                     let cnt = self.settings.ship_count;
                     self.status = GameStatus::SelectionMode;
-                    a.status = PlayerStatus::Selecting(cnt);
-                    b.status = PlayerStatus::Selecting(cnt);
+                    a.status = PlayerStatus::Selecting(cnt.clone());
+                    b.status = PlayerStatus::Selecting(cnt.clone());
                     Some(ServerCommand::SelectionMode(SelectionCriteria {
                         count: cnt,
                     }))
@@ -195,17 +205,17 @@ impl Lobby {
                     (&a.status, &b.status)
                 {
                     // tranditioning from selections to launching
-                    self.status = GameStatus::PlayerTurn(a_name.clone());
+                    self.status = GameStatus::PlayerTurn(a.id.clone());
                     a.status = PlayerStatus::Deciding(true); // true means missle loadec
-                    Some(ServerCommand::PlayerTurn(a_name))
+                    Some(ServerCommand::PlayerTurn(a.id.clone()))
                 } else {
                     None
                 }
             }
-            GameStatus::PlayerTurn(name) => {
+            GameStatus::PlayerTurn(id) => {
                 // TODO: add a check to see if player launched or not
                 // getting player who wasn launched at
-                let (bomber, bombed_player) = if a_name == *name { (a, b) } else { (b, a) };
+                let (bomber, bombed_player) = if a.id.clone() == *id { (a, b) } else { (b, a) };
                 if bombed_player.ships_alive == 0 {
                     self.status = GameStatus::GameOver;
                     Some(ServerCommand::GameOver)
@@ -216,8 +226,8 @@ impl Lobby {
                     bomber.status = PlayerStatus::Deciding(false);
                     // bombed is deciding
                     bombed_player.status = PlayerStatus::Deciding(true);
-                    self.status = GameStatus::PlayerTurn(bombed_player.name.clone());
-                    Some(ServerCommand::PlayerTurn(bombed_player.name.clone()))
+                    self.status = GameStatus::PlayerTurn(bombed_player.id.clone());
+                    Some(ServerCommand::PlayerTurn(bombed_player.id.clone()))
                 } else {
                     // if this case is encountered, deciding must be true
                     info!(
@@ -438,11 +448,11 @@ async fn test_simple_lobby_game_lifecycle() {
     dbg!("msg_a: {:#?}", &msg_b);
     assert!(matches!(
         msg_a.payload,
-        Payload::ServerCommand(ServerCommand::SelectionConfirmation(_))
+        Payload::ServerCommand(ServerCommand::PlaceBoatConfirmation(_))
     ));
     assert!(matches!(
         msg_b.payload,
-        Payload::ServerCommand(ServerCommand::SelectionConfirmation(_))
+        Payload::ServerCommand(ServerCommand::PlaceBoatConfirmation(_))
     ));
     let msg_a = rx_a.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_a);
@@ -457,21 +467,15 @@ async fn test_simple_lobby_game_lifecycle() {
         Payload::ServerCommand(ServerCommand::PlayerTurn(_))
     ));
 
-    // Simulate missile launch
+    // Simulate missile launch - Player A first
     let missile_msg_a = GameMessage {
         id: 3,
         sender: a_id.clone(),
         payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 1, y: 1 })),
     };
     tx_a_in.send(missile_msg_a).await.unwrap();
-    let missile_msg_b = GameMessage {
-        id: 4,
-        sender: b_id.clone(),
-        payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates { x: 0, y: 0 })),
-    };
-    tx_b_in.send(missile_msg_b).await.unwrap();
 
-    // Receive responses for missile launch
+    // Receive responses for Player A's missile launch
     let msg_a = rx_a.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_a);
     let msg_b = rx_b.recv().await.unwrap();
@@ -484,20 +488,470 @@ async fn test_simple_lobby_game_lifecycle() {
         msg_b.payload,
         Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(_, _))
     ));
-    // Receive responses for missile launch
+
+    // Receive turn change message OR game over (if Player A hits the last ship)
     let msg_a = rx_a.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_a);
     let msg_b = rx_b.recv().await.unwrap();
     dbg!("msg_a: {:#?}", &msg_b);
-    assert!(matches!(
+
+    // Check if game is over (Player B's ship was destroyed)
+    if matches!(
         msg_a.payload,
         Payload::ServerCommand(ServerCommand::GameOver)
-    ));
-    assert!(matches!(
-        msg_b.payload,
-        Payload::ServerCommand(ServerCommand::GameOver)
-    ));
+    ) {
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::GameOver)
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::GameOver)
+        ));
+    } else {
+        // Game continues, expect turn change
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+
+        // Now Player B fires
+        let missile_msg_b = GameMessage {
+            id: 4,
+            sender: b_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::LaunchMissle(Coordinates {
+                x: 0,
+                y: 0,
+            })),
+        };
+        tx_b_in.send(missile_msg_b).await.unwrap();
+
+        // Receive responses for Player B's missile launch
+        let msg_a = rx_a.recv().await.unwrap();
+        dbg!("msg_a: {:#?}", &msg_a);
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!("msg_a: {:#?}", &msg_b);
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(_, _))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(_, _))
+        ));
+
+        // Game should be over now
+        let msg_a = rx_a.recv().await.unwrap();
+        dbg!("msg_a: {:#?}", &msg_a);
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!("msg_a: {:#?}", &msg_b);
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::GameOver)
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::GameOver)
+        ));
+    }
     tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
     handle.await.unwrap();
     // You can extend this to simulate more of the lifecycle, e.g. selection, turns, game over, etc.
+}
+
+#[tokio::test]
+async fn test_complex_lobby_game_with_multiple_ships_and_misses() {
+    use crate::lobby::Lobby;
+    use battleship_models::*;
+    use tokio::sync::mpsc;
+
+    // Setup player channels
+    let (tx_a, mut rx_a) = mpsc::channel(10);
+    let (tx_b, mut rx_b) = mpsc::channel(10);
+    let (tx_a_in, rx_a_in) = mpsc::channel(10);
+    let (tx_b_in, rx_b_in) = mpsc::channel(10);
+
+    let (tx_from_man, rx_from_man) = mpsc::channel(10);
+
+    // Create lobby with more ships and larger board
+    let ship_count = 3;
+    let board_size = 5;
+
+    let handle = tokio::spawn(async move {
+        if let Err(r) = Lobby::new(String::from("complex_test"), rx_from_man)
+            .set_settings(battleship_models::Settings {
+                rows: board_size,
+                cols: board_size,
+                ship_count,
+            })
+            .run()
+            .await
+        {
+            dbg!("Error occurred in test lobby {:?}", r);
+        }
+    });
+
+    dbg!(
+        "Complex lobby started with {} ships on {}x{} board",
+        ship_count,
+        board_size,
+        board_size
+    );
+
+    // Connect players to lobby
+    tx_from_man
+        .send(ManagerMessage::NewConnection(ConnectionDetails {
+            player_name: "Player_Alpha".to_string(),
+            tx: tx_a,
+            rx: rx_a_in,
+        }))
+        .await
+        .unwrap();
+    tx_from_man
+        .send(ManagerMessage::NewConnection(ConnectionDetails {
+            player_name: "Player_Beta".to_string(),
+            tx: tx_b,
+            rx: rx_b_in,
+        }))
+        .await
+        .unwrap();
+
+    // Verify game initialization
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("Initialization messages: A={:#?}, B={:#?}", &msg_a, &msg_b);
+
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::InitializeGame(_, _))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::InitializeGame(_, _))
+    ));
+
+    // Extract player IDs
+    let a_id = if let Payload::ServerCommand(ServerCommand::InitializeGame(id, _)) = msg_a.payload {
+        id
+    } else {
+        "Alpha".to_string()
+    };
+    let b_id = if let Payload::ServerCommand(ServerCommand::InitializeGame(id, _)) = msg_b.payload {
+        id
+    } else {
+        "Beta".to_string()
+    };
+
+    // Verify selection mode
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("Selection mode messages: A={:#?}, B={:#?}", &msg_a, &msg_b);
+
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::SelectionMode(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::SelectionMode(_))
+    ));
+
+    // Place ships for Player A at (0,0), (1,1), (2,2)
+    let ship_positions_a = vec![
+        Coordinates { x: 0, y: 0 },
+        Coordinates { x: 1, y: 1 },
+        Coordinates { x: 2, y: 2 },
+    ];
+
+    for (i, pos) in ship_positions_a.iter().enumerate() {
+        let ship_msg = GameMessage {
+            id: (i + 1) as u32,
+            sender: a_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::PlaceShip(*pos)),
+        };
+        tx_a_in.send(ship_msg).await.unwrap();
+
+        // Receive ship placement confirmation
+        let msg = rx_a.recv().await.unwrap();
+        dbg!("Player A ship {} placement response: {:#?}", i + 1, &msg);
+        assert!(matches!(
+            msg.payload,
+            Payload::ServerCommand(ServerCommand::PlaceBoatConfirmation(_))
+        ));
+    }
+
+    // Place ships for Player B at (4,4), (3,3), (0,4)
+    let ship_positions_b = vec![
+        Coordinates { x: 4, y: 4 },
+        Coordinates { x: 3, y: 3 },
+        Coordinates { x: 0, y: 4 },
+    ];
+
+    for (i, pos) in ship_positions_b.iter().enumerate() {
+        let ship_msg = GameMessage {
+            id: (i + 4) as u32,
+            sender: b_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::PlaceShip(*pos)),
+        };
+        tx_b_in.send(ship_msg).await.unwrap();
+
+        // Receive ship placement confirmation
+        let msg = rx_b.recv().await.unwrap();
+        dbg!("Player B ship {} placement response: {:#?}", i + 1, &msg);
+        assert!(matches!(
+            msg.payload,
+            Payload::ServerCommand(ServerCommand::PlaceBoatConfirmation(_))
+        ));
+    }
+
+    // Verify transition to player turn
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("Player turn messages: A={:#?}, B={:#?}", &msg_a, &msg_b);
+
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+    ));
+
+    // Start missile sequence with deliberate misses before hits
+    let mut message_id = 7;
+
+    // Player A fires and misses (targeting empty cells)
+    let miss_targets_a = vec![
+        Coordinates { x: 1, y: 0 }, // Miss
+        Coordinates { x: 2, y: 0 }, // Miss
+        Coordinates { x: 4, y: 0 }, // Miss
+    ];
+
+    for (i, target) in miss_targets_a.iter().enumerate() {
+        let missile_msg = GameMessage {
+            id: message_id,
+            sender: a_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::LaunchMissle(*target)),
+        };
+        tx_a_in.send(missile_msg).await.unwrap();
+        message_id += 1;
+
+        // Receive missile launch confirmation (should be Miss)
+        let msg_a = rx_a.recv().await.unwrap();
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!(
+            "Player A miss {} responses: A={:#?}, B={:#?}",
+            i + 1,
+            &msg_a,
+            &msg_b
+        );
+
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Miss, _))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Miss, _))
+        ));
+
+        // Receive turn change message
+        let msg_a = rx_a.recv().await.unwrap();
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!(
+            "Turn change after A's miss {}: A={:#?}, B={:#?}",
+            i + 1,
+            &msg_a,
+            &msg_b
+        );
+
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+
+        // Player B's turn - fire and miss
+        let b_miss_target = match i {
+            0 => Coordinates { x: 1, y: 2 },
+            1 => Coordinates { x: 3, y: 0 },
+            _ => Coordinates { x: 4, y: 1 },
+        };
+
+        let missile_msg_b = GameMessage {
+            id: message_id,
+            sender: b_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::LaunchMissle(b_miss_target)),
+        };
+        tx_b_in.send(missile_msg_b).await.unwrap();
+        message_id += 1;
+
+        // Receive Player B's miss
+        let msg_a = rx_a.recv().await.unwrap();
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!(
+            "Player B miss {} responses: A={:#?}, B={:#?}",
+            i + 1,
+            &msg_a,
+            &msg_b
+        );
+
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Miss, _))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Miss, _))
+        ));
+
+        // Receive turn change message back to A
+        let msg_a = rx_a.recv().await.unwrap();
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!(
+            "Turn change after B's miss {}: A={:#?}, B={:#?}",
+            i + 1,
+            &msg_a,
+            &msg_b
+        );
+
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+        ));
+    }
+
+    // Now start hitting ships - Player A hits Player B's ships
+    for (i, target) in ship_positions_b.iter().enumerate() {
+        let missile_msg = GameMessage {
+            id: message_id,
+            sender: a_id.clone(),
+            payload: Payload::ClientCommand(ClientCommand::LaunchMissle(*target)),
+        };
+        tx_a_in.send(missile_msg).await.unwrap();
+        message_id += 1;
+
+        // Receive hit confirmation
+        let msg_a = rx_a.recv().await.unwrap();
+        let msg_b = rx_b.recv().await.unwrap();
+        dbg!(
+            "Player A hit {} responses: A={:#?}, B={:#?}",
+            i + 1,
+            &msg_a,
+            &msg_b
+        );
+
+        assert!(matches!(
+            msg_a.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Hit, _))
+        ));
+        assert!(matches!(
+            msg_b.payload,
+            Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Hit, _))
+        ));
+
+        // If this isn't the last ship, expect turn change and Player B's turn
+        if i < ship_positions_b.len() - 1 {
+            // Expect turn change message
+            let msg_a = rx_a.recv().await.unwrap();
+            let msg_b = rx_b.recv().await.unwrap();
+            dbg!(
+                "Turn change after A's hit {}: A={:#?}, B={:#?}",
+                i + 1,
+                &msg_a,
+                &msg_b
+            );
+
+            assert!(matches!(
+                msg_a.payload,
+                Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+            ));
+            assert!(matches!(
+                msg_b.payload,
+                Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+            ));
+
+            // Player B fires back and hits one of A's ships
+            let missile_msg_b = GameMessage {
+                id: message_id,
+                sender: b_id.clone(),
+                payload: Payload::ClientCommand(ClientCommand::LaunchMissle(ship_positions_a[i])),
+            };
+            tx_b_in.send(missile_msg_b).await.unwrap();
+            message_id += 1;
+
+            // Receive Player B's hit
+            let msg_a = rx_a.recv().await.unwrap();
+            let msg_b = rx_b.recv().await.unwrap();
+            dbg!(
+                "Player B hit {} responses: A={:#?}, B={:#?}",
+                i + 1,
+                &msg_a,
+                &msg_b
+            );
+
+            assert!(matches!(
+                msg_a.payload,
+                Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Hit, _))
+            ));
+            assert!(matches!(
+                msg_b.payload,
+                Payload::ServerCommand(ServerCommand::LaunchMissleConfirmation(CellState::Hit, _))
+            ));
+
+            // Expect turn change back to A
+            let msg_a = rx_a.recv().await.unwrap();
+            let msg_b = rx_b.recv().await.unwrap();
+            dbg!(
+                "Turn change after B's hit {}: A={:#?}, B={:#?}",
+                i + 1,
+                &msg_a,
+                &msg_b
+            );
+
+            assert!(matches!(
+                msg_a.payload,
+                Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+            ));
+            assert!(matches!(
+                msg_b.payload,
+                Payload::ServerCommand(ServerCommand::PlayerTurn(_))
+            ));
+        }
+    }
+
+    // Verify game over after all ships are destroyed
+    let msg_a = rx_a.recv().await.unwrap();
+    let msg_b = rx_b.recv().await.unwrap();
+    dbg!("Game over messages: A={:#?}, B={:#?}", &msg_a, &msg_b);
+
+    assert!(matches!(
+        msg_a.payload,
+        Payload::ServerCommand(ServerCommand::GameOver)
+    ));
+    assert!(matches!(
+        msg_b.payload,
+        Payload::ServerCommand(ServerCommand::GameOver)
+    ));
+
+    // Shutdown the lobby
+    tx_from_man.send(ManagerMessage::Shutdown).await.unwrap();
+    handle.await.unwrap();
+
+    dbg!(
+        "Complex test completed successfully - {} ships placed, multiple misses and hits verified",
+        ship_count
+    );
 }

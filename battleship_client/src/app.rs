@@ -112,12 +112,12 @@ impl App {
                                 match &state.status {
                                     GameStatus::SelectionMode => {
                                             let Position { x, y} = state.position;
-                                            state.mark_ship_pending(y, x)?;
+                                            // state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::PlaceShip(Coordinates { x, y } );
                                             self.send_message(m).await;
                                     },
-                                    GameStatus::PlayerTurn(player_name) => {
-                                        if *player_name == state.player_name {
+                                    GameStatus::PlayerTurn(player_id) => {
+                                        if *player_id == state.id {
                                             let Position { x, y} = state.position;
                                             state.mark_ship_pending(y, x)?;
                                             let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
@@ -131,7 +131,9 @@ impl App {
                                         self.notification_pane.add_notification(String::from("Action cannot be performed during current state"));
                                     },
                                     }
-                            } else {},
+                            } else {
+                                        self.notification_pane.add_notification(String::from("Game not initialized yet"));
+                            },
                             AppEvent::Increment => self.increment_counter(),
                             AppEvent::Decrement => self.decrement_counter(),
                             AppEvent::Quit => self.quit(),
@@ -139,13 +141,12 @@ impl App {
                     }
                 },
                 Some(msg) = self.rx.recv() => {
-                    self.notification_pane.add_notification(String::from("Got it"));
                     if let battleship_models::Payload::ServerCommand(data) = msg.payload {
                         match data {
                             ServerCommand::InitializeGame(id, settings) => {
                                 self.settings = Some(settings);
-                                // TODO: construct table
                                 self.state_option = Some(GameState {
+                                    id: id,
                                     player_name: String::from("placeholder"),
                                     rows: settings.rows,
                                     cols: settings.cols,
@@ -158,17 +159,32 @@ impl App {
                             ServerCommand::SelectionMode(criteria) => {
                                 self.state_option.as_mut().expect("should have state").status = GameStatus::SelectionMode;
                             },
-                            ServerCommand::SelectionConfirmation(coordinates) => {
+                            ServerCommand::PlaceBoatConfirmation(coordinates) => {
                                 self.state_option.as_mut().expect("should have state")
                                     .place_ship(coordinates.y, coordinates.x);
                             },
-                            ServerCommand::PlayerTurn(name) => {
-                                self.state_option.as_mut().expect("should have state").status = GameStatus::PlayerTurn(name.clone());
+                            ServerCommand::PlaceBoatError(cell_state, coordinates, message) => {
+                                self.state_option.as_mut().expect("should have state")
+                                    .update_cell(coordinates.y, coordinates.x, cell_state);
+                                self.notification_pane.add_notification(message);
+                            },
+                            ServerCommand::PlayerTurn(id) => {
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if matches!(&state.status, GameStatus::SelectionMode ) {
+                                        state.clear_board();
+                                }
+                                state.status = GameStatus::PlayerTurn(id);
                             },
                             ServerCommand::LaunchMissle(state, coor) => {},
-                            ServerCommand::LaunchMissleConfirmation(state, coordinates) => {
-                                self.state_option.as_mut().expect("should have state")
-                                    .destroy_ship(coordinates.y, coordinates.x);
+                            ServerCommand::LaunchMissleConfirmation(cell_state, coordinates) => {
+                                // TODO: add a check the id
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if let GameStatus::PlayerTurn(id) = &state.status && *id != state.id {
+                                    state.update_cell(coordinates.y, coordinates.x, cell_state);
+                                    self.notification_pane.add_notification(String::from("Man down"));
+                                } else {
+                                    self.notification_pane.add_notification(String::from("Player hit"));
+                                }
                             },
                             ServerCommand::Text(message) => {
                                 self.notification_pane.add_notification(message);
@@ -220,7 +236,7 @@ impl App {
             self.tx
                 .send(GameMessage {
                     id: 1,
-                    sender: state.player_name.clone(),
+                    sender: state.id.clone(),
                     payload: battleship_models::Payload::ClientCommand(m),
                 })
                 .await;
