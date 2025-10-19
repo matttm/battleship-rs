@@ -1,0 +1,267 @@
+use std::{collections::VecDeque, error::Error};
+
+use crate::{
+    event::{AppEvent, Event, EventHandler},
+    widgets::{
+        game_state::{GameState, Position},
+        notification_pane::NotificationPane,
+    },
+};
+use battleship_models::{
+    CellState, ClientCommand, Coordinates, GameMessage, GameStatus, ServerCommand, Settings,
+};
+use futures::stream::{SplitSink, SplitStream};
+use futures_util::{SinkExt, StreamExt};
+use ratatui::{
+    DefaultTerminal, Frame,
+    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+    layout::{Constraint, Direction, Layout, Margin},
+    style::{Color, Style, Stylize},
+    symbols::scrollbar,
+    widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+};
+use tokio::{
+    net::TcpStream,
+    select,
+    sync::mpsc::{Receiver, Sender},
+};
+use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, tungstenite::Message};
+use tracing::info;
+
+/// Application.
+#[derive(Debug)]
+pub struct App {
+    /// Is the application running?
+    pub running: bool,
+    /// Counter.
+    pub counter: u8,
+    /// Event handler.
+    pub events: EventHandler,
+    pub settings: Option<Settings>,
+    pub state_option: Option<GameState>,
+    pub notification_pane: NotificationPane,
+    tx: Sender<GameMessage>,
+    rx: Receiver<GameMessage>,
+}
+
+impl App {
+    /// Constructs a new instance of [`App`].
+    pub async fn new() -> Result<Self, Box<dyn Error>> {
+        let (socket, _) = tokio_tungstenite::connect_async(format!("ws://localhost:9001")).await?;
+        let (mut tx, mut rx) = socket.split();
+        let (tx_inbound, mut rx_inbound) = tokio::sync::mpsc::channel(100);
+        let (tx_outbound, mut rx_outbound) = tokio::sync::mpsc::channel(100);
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                Some(Ok(tungstenite::Message::Text(msg_json))) = rx.next() => {
+                    let s = msg_json.to_string();
+                    info!("Inbound json message {}", s);
+                    if let Ok(msg) = serde_json::from_str::<GameMessage>(&s) {
+                        if let Err(_) = tx_inbound.send(msg).await {}
+                    }
+                }
+                    Some(bs_msg) = rx_outbound.recv() => {
+                        if let Ok(json) = serde_json::to_string(&bs_msg) {
+                    info!("Outbound json message {}", json);
+                            let tung_msg = tungstenite::protocol::Message::text(json);
+                                if let Err(_) = tx.send(tung_msg).await {}
+                        }
+                    }
+                    else => break
+                }
+            }
+        });
+        let d = Self {
+            running: true,
+            counter: 0,
+            events: EventHandler::new(),
+            settings: None,
+            state_option: None,
+            notification_pane: NotificationPane::new(VecDeque::new()),
+            tx: tx_outbound,
+            rx: rx_inbound,
+        };
+        Ok(d)
+    }
+
+    /// Run the application's main loop.
+    pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Box<dyn Error>> {
+        while self.running {
+            terminal.draw(|frame| {
+                self.render_app(frame);
+            })?;
+            tokio::select! {
+                Ok(event) = self.events.next() => {
+                    match event {
+                        Event::Tick => self.tick(),
+                        Event::Crossterm(event) => match event {
+                            crossterm::event::Event::Key(key_event) => self.handle_key_events(key_event)?,
+                            _ => {}
+                        },
+                        Event::App(app_event) => match app_event {
+                            AppEvent::MovePlayer(dx, dy) => {
+                                if let Some(state) = self.state_option.as_mut() {
+                                    state.move_player(dx, dy);
+                                } else {
+                                    self.notification_pane.add_notification(String::from("Game has not begun yet"));
+                                }
+                            },
+                            AppEvent::Action => if let Some(state) = self.state_option.as_mut() {
+                                match &state.status {
+                                    GameStatus::SelectionMode => {
+                                            let Position { x, y} = state.position;
+                                            // state.mark_ship_pending(y, x)?;
+                                            let m = ClientCommand::PlaceShip(Coordinates { x, y } );
+                                            self.send_message(m).await;
+                                    },
+                                    GameStatus::PlayerTurn(player_id) => {
+                                        if *player_id == state.id {
+                                            let Position { x, y} = state.position;
+                                            state.mark_ship_pending(y, x)?;
+                                            let m = ClientCommand::LaunchMissle(Coordinates { x, y } );
+                                            self.send_message(m).await;
+                                        } else {
+                                            self.notification_pane.add_notification(String::from("Not your turn"));
+                                        }
+                                    }
+                                    _ => {
+                                        info!("Action cannot be performed during state: {:?}", state);
+                                        self.notification_pane.add_notification(String::from("Action cannot be performed during current state"));
+                                    },
+                                    }
+                            } else {
+                                        self.notification_pane.add_notification(String::from("Game not initialized yet"));
+                            },
+                            AppEvent::Increment => self.increment_counter(),
+                            AppEvent::Decrement => self.decrement_counter(),
+                            AppEvent::Quit => self.quit(),
+                        },
+                    }
+                },
+                Some(msg) = self.rx.recv() => {
+                    if let battleship_models::Payload::ServerCommand(data) = msg.payload {
+                        match data {
+                            ServerCommand::InitializeGame(id, settings) => {
+                                self.settings = Some(settings);
+                                self.state_option = Some(GameState {
+                                    id: id,
+                                    player_name: String::from("placeholder"),
+                                    rows: settings.rows,
+                                    cols: settings.cols,
+                                    board: vec![vec![CellState::Empty; settings.cols]; settings.rows],
+                                    status: battleship_models::GameStatus::Uninitialized,
+                                    position: Position { x: 0, y: 0 }
+                                });
+                            },
+                            ServerCommand::SetProfileConfirmation => {},
+                            ServerCommand::SelectionMode(criteria) => {
+                                self.state_option.as_mut().expect("should have state").status = GameStatus::SelectionMode;
+                            },
+                            ServerCommand::PlaceBoatConfirmation(coordinates) => {
+                                self.state_option.as_mut().expect("should have state")
+                                    .place_ship(coordinates.y, coordinates.x);
+                            },
+                            ServerCommand::PlaceBoatError(cell_state, coordinates, message) => {
+                                self.state_option.as_mut().expect("should have state")
+                                    .update_cell(coordinates.y, coordinates.x, cell_state);
+                                self.notification_pane.add_notification(message);
+                            },
+                            ServerCommand::PlayerTurn(id) => {
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if matches!(&state.status, GameStatus::SelectionMode ) {
+                                        state.clear_board();
+                                }
+                                state.status = GameStatus::PlayerTurn(id);
+                            },
+                            ServerCommand::LaunchMissle(state, coor) => {},
+                            ServerCommand::LaunchMissleConfirmation(cell_state, coordinates) => {
+                                // TODO: add a check the id
+                                let state = self.state_option.as_mut().expect("should have state");
+                                if let GameStatus::PlayerTurn(id) = &state.status && *id != state.id {
+                                    state.update_cell(coordinates.y, coordinates.x, cell_state);
+                                    self.notification_pane.add_notification(String::from("Man down"));
+                                } else {
+                                    self.notification_pane.add_notification(String::from("Player hit"));
+                                }
+                            },
+                            ServerCommand::Text(message) => {
+                                self.notification_pane.add_notification(message);
+                            },
+                            ServerCommand::GameOver => {}
+                        }
+                    } else {}
+                }
+            }
+        }
+        Ok(())
+    }
+    fn render_app(&self, frame: &mut Frame) {
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Percentage(70), Constraint::Percentage(20)])
+            .split(frame.area());
+        frame.render_widget(self, layout[0].inner(Margin::new(2, 2)));
+        if let Some(state) = self.state_option.as_ref() {
+            frame.render_widget(state, layout[0].inner(Margin::new(2, 2)));
+        }
+        frame.render_widget(&self.notification_pane, layout[1]);
+    }
+
+    /// Handles the key events and updates the state of [`App`].
+    pub fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+        match key_event.code {
+            KeyCode::Char('w') => self.events.send(AppEvent::MovePlayer(0i16, -1i16)),
+            KeyCode::Char('d') => self.events.send(AppEvent::MovePlayer(1i16, 0i16)),
+            KeyCode::Char('s') => self.events.send(AppEvent::MovePlayer(0i16, 1i16)),
+            KeyCode::Char('a') => self.events.send(AppEvent::MovePlayer(-1i16, 0i16)),
+            KeyCode::Esc | KeyCode::Char('q') => self.events.send(AppEvent::Quit),
+            KeyCode::Enter | KeyCode::Char('f') => {
+                info!("Firing action event");
+                self.events.send(AppEvent::Action)
+            }
+            KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.events.send(AppEvent::Quit)
+            }
+            KeyCode::Right => self.events.send(AppEvent::Increment),
+            KeyCode::Left => self.events.send(AppEvent::Decrement),
+            // Other handlers you could add here.
+            _ => {}
+        }
+        Ok(())
+    }
+    async fn send_message(&self, m: ClientCommand) -> Result<(), Box<dyn Error>> {
+        if let Some(state) = self.state_option.as_ref() {
+            self.tx
+                .send(GameMessage {
+                    id: 1,
+                    sender: state.id.clone(),
+                    payload: battleship_models::Payload::ClientCommand(m),
+                })
+                .await;
+            Ok(())
+        } else {
+            Err("".into())
+        }
+    }
+
+    /// Handles the tick event of the terminal.
+    ///
+    /// The tick event is where you can update the state of your application with any logic that
+    /// needs to be updated at a fixed frame rate. E.g. polling a server, updating an animation.
+    pub fn tick(&self) {}
+
+    /// Set running to false to quit the application.
+    pub fn quit(&mut self) {
+        self.running = false;
+    }
+
+    pub fn increment_counter(&mut self) {
+        self.counter = self.counter.saturating_add(1);
+    }
+
+    pub fn decrement_counter(&mut self) {
+        self.counter = self.counter.saturating_sub(1);
+    }
+}

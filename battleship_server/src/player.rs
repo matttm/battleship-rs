@@ -1,6 +1,7 @@
-use battleship_models::{self, CellStates, GameMessage};
+use battleship_models::{self, CellState, GameMessage};
 use tokio::sync::mpsc;
 
+#[derive(Debug)]
 pub enum PlayerStatus {
     Uninitialized,
     Initialized,
@@ -14,7 +15,7 @@ pub struct Player {
     pub status: PlayerStatus,
     pub tx: mpsc::Sender<GameMessage>,
     pub rx: mpsc::Receiver<GameMessage>,
-    board: Box<[Box<[CellStates]>]>,
+    pub board: Box<[Box<[CellState]>]>,
     pub ships_alive: usize,
 }
 impl Player {
@@ -34,15 +35,25 @@ impl Player {
             ships_alive: 0,
         }
     }
-    pub fn place_ship(
-        &mut self,
-        row: usize,
-        col: usize,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    pub fn place_ship(&mut self, row: usize, col: usize) -> Result<(), Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
+        if !matches!(self.status, PlayerStatus::Selecting(_)) {
+            return Err("Not in selection mode".into());
+        }
+        if let PlayerStatus::Selecting(ref mut cnt) = self.status {
+            if *cnt == 0 {
+                return Err("No boats left to place".into());
+            }
+            *cnt -= 1;
+        }
         match current {
-            CellStates::Empty => self.set_cell(row, col, CellStates::Boat),
-            CellStates::Boat => Err("There is already a ship at this position.".into()),
+            CellState::Empty => {
+                self.set_cell(row, col, CellState::Boat)?;
+                // Decrement the count directly and place the ship.
+                self.ships_alive += 1; // Increment ships alive when placing
+                Ok(())
+            }
+            CellState::Boat => Err("There is already a ship at this position.".into()),
             _ => Err("Unknown error".into()),
         }
     }
@@ -50,15 +61,15 @@ impl Player {
         &mut self,
         row: usize,
         col: usize,
-    ) -> Result<CellStates, Box<dyn std::error::Error>> {
+    ) -> Result<CellState, Box<dyn std::error::Error>> {
         let current = &self.board[row][col];
         let state;
         match current {
-            CellStates::Empty => {
-                state = CellStates::Miss;
+            CellState::Empty => {
+                state = CellState::Miss;
             }
-            CellStates::Boat => {
-                state = CellStates::Hit;
+            CellState::Boat => {
+                state = CellState::Hit;
             }
             _ => return Err("".into()),
         };
@@ -69,15 +80,15 @@ impl Player {
         &mut self,
         row: usize,
         col: usize,
-        state: CellStates,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+        state: CellState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.board[row][col] = state.clone();
-        Ok(true)
+        Ok(())
     }
-    fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellStates]>]> {
+    fn initialize_board(rows: usize, cols: usize) -> Box<[Box<[CellState]>]> {
         let mut vec_rows = Vec::with_capacity(rows);
         for _ in 0..rows {
-            vec_rows.push(vec![CellStates::Empty; cols].into_boxed_slice());
+            vec_rows.push(vec![CellState::Empty; cols].into_boxed_slice());
         }
         vec_rows.into_boxed_slice()
     }

@@ -7,5 +7,6 @@ use crate::lobby_manager::LobbyManager;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     LobbyManager::new().start().await;
 }

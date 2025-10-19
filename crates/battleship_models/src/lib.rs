@@ -1,7 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
-pub enum CellStates {
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum GameStatus {
+    Uninitialized,
+    SelectionMode,
+    PlayerTurn(String), // whose turn it is
+    GameOver,
+}
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum CellState {
+    // use this when ui shoots and is waiting to find if launch is a hit
+    Pending,
     Empty,
     Boat,
     Miss,
@@ -39,8 +48,11 @@ pub enum ServerCommand {
     InitializeGame(String, Settings), // string is server given uuid
     SetProfileConfirmation,
     SelectionMode(SelectionCriteria),
+    PlaceBoatError(CellState, Coordinates, String),
+    PlaceBoatConfirmation(Coordinates),
     PlayerTurn(String), // the string is whose turn it is
-    LaunchMissle(CellStates, Coordinates),
+    LaunchMissle(CellState, Coordinates),
+    LaunchMissleConfirmation(CellState, Coordinates),
     Text(String),
     GameOver,
 }
