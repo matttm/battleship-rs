@@ -3,9 +3,7 @@
 
 ## Description
 
-A two-player recreation of the classic tabletop game written in Rust.
-
-As of 9/12/25, this reposiitory includes an initial version of a game server, using the websocket protocol. 
+A two-player recreation of the classic tabletop game written in Rust. There are two seperate binaries--one for the client and one for the backend.
 
 ## Getting Started
 
@@ -14,11 +12,30 @@ Assuming you have cargo and rust installed, from the root directory, run
 ❯ cargo build
 ```
 
-Then run
+Then to run the tests, run
 ```
 ❯ cargo test -p battleship_server --bin battleship_server -- --nocapture
 ```
 The `nocapture` flag prevents debug output from being hidden.
+
+To play, you'll need three terminals--one for backend (a), two for client (b) and (c).
+
+In (a), run
+```
+> cd battleship-rs/battleship_server
+```
+then start with
+```
+
+RUST_LOG=info cargo run
+```
+Similarly, for (b) and (c), run
+```
+> cd battleship-rs/battleship_client
+```
+and then start the game with the same.
+
+Use WASD keys to move and enter for the action button. Currently, you must select four positions for your fleet's positions. Once, both players do this, begin firing!
 
 ## Design Decisions
 
@@ -31,6 +48,10 @@ This section will document key design decisions made for this project.
 Enable logging with:
 ```
 RUST_LOG=info cargo run
+```
+The logs are currently output to:
+```
+❯ ~/Library/Application\ Support/com.matttm.battleship_client/battleship_client.log
 ```
 
 ## Authors
