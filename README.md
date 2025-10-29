@@ -26,7 +26,6 @@ In (a), run
 ```
 then start with
 ```
-
 RUST_LOG=info cargo run
 ```
 Similarly, for (b) and (c), run
